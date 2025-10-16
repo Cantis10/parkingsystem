@@ -4,6 +4,7 @@ const express = require('express');
 const path = require('path');
 const session = require('express-session');
 const { createClient } = require('@libsql/client');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 
@@ -29,45 +30,6 @@ try {
   process.exit(1);
 }
 
-
-// Create tables if not exists
-async function initializeDatabase() {
-  try {
-    // Create accounts table
-    await db.execute(`CREATE TABLE IF NOT EXISTS accounts (
-      username TEXT PRIMARY KEY,
-      email TEXT UNIQUE,
-      password TEXT,
-      role TEXT DEFAULT 'user',
-      slotIndexTaken TEXT,
-      locationTaken TEXT
-    )`);
-
-    // Create parking_spaces table
-    await db.execute(`CREATE TABLE IF NOT EXISTS parking_spaces (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      state TEXT DEFAULT 'available',
-      exclusive TEXT,
-      price REAL,
-      index_number INTEGER UNIQUE,
-      floor INTEGER,
-      location_x REAL,
-      location_y REAL,
-      width REAL,
-      height REAL,
-      plate TEXT,
-      days_to_occupy INTEGER,
-      last_update TEXT
-    )`);
-
-    console.log('Database tables ready');
-  } catch (err) {
-    console.error('Error creating tables:', err);
-  }
-}
-
-// Initialize database on startup
-initializeDatabase().catch(console.error);
 
 
 
@@ -100,13 +62,16 @@ app.get('/map', requireAuth, (req, res) => {
 
 // Auth middleware
 function requireAuth(req, res, next) {
-  if (!req.session || !req.session.user) {
-    if (req.xhr || req.headers.accept?.includes('application/json')) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
+  const token = req.cookies.token;
+  if (!token) return res.redirect('/login');
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = payload;
+    next();
+  } catch (err) {
     return res.redirect('/login');
   }
-  next();
 }
 
 // API endpoint to get all parking spaces
@@ -235,28 +200,22 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Set session
-    req.session.user = {
-      username: user.username,
-      email: user.email,
-      role: user.role
-    };
+   const token = jwt.sign(
+    { username: user.username, email: user.email, role: user.role },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
 
-    // Explicitly save the session before sending the response
-    req.session.save(err => {
-      if (err) {
-        console.error('Session save error during login:', err);
-        return res.status(500).json({ error: 'Failed to save session' });
-      }
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 24 * 60 * 60 * 1000
+  });
 
-      // Send success response for the client to handle the redirect
-      res.json({
-        success: true,
-        username: user.username,
-        email: user.email,
-        role: user.role
-      });
-    });
+  res.json({ success: true });
+
+
   } catch (err) {
     console.error('Login error:', err);
 
