@@ -10,8 +10,8 @@
   ],
 
   "rewrites": [
- { "source": "/", "destination": "/login.html" }
-  { "source": "/home", "destination": "/home.html" }
+ { "source": "/", "destination": "/login.html" },
+  { "source": "/home", "destination": "/home.html" },
    { "source": "/map", "destination": "/map.html" }
   ]
 }
