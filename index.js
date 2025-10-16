@@ -69,6 +69,21 @@ async function initializeDatabase() {
 // Initialize database on startup
 initializeDatabase().catch(console.error);
 
+
+
+// Add session middleware with better configuration for Vercel
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'fallback-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'lax'
+  }
+}));
+
 // Serve static files from the frontend directory
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -86,22 +101,9 @@ app.get('/map', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'map.html'));
 });
 
-// Add session middleware with better configuration for Vercel
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'fallback-secret-change-in-production',
-  resave: false,
-  saveUninitialized: false,
-  cookie: { 
-    secure: process.env.NODE_ENV === 'production',
-    httpOnly: true,
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
-    sameSite: 'lax'
-  }
-}));
-
 // Auth middleware
 function requireAuth(req, res, next) {
-  if (!req.session.user) {
+  if (!req.session || !req.session.user) {
     if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.status(401).json({ error: 'Authentication required' });
     }
