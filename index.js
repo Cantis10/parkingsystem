@@ -20,14 +20,15 @@ console.log('Token length:', process.env.TURSO_AUTH_TOKEN.length);
 let db;
 try {
   db = createClient({
-    url: process.env.TURSO_DATABASE_URL,
-    authToken: process.env.TURSO_AUTH_TOKEN
+url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN?.trim()
   });
   console.log('Turso client initialized');
 } catch (err) {
   console.error('Failed to initialize Turso client:', err);
   process.exit(1);
 }
+
 
 // Create tables if not exists
 async function initializeDatabase() {
