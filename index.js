@@ -11,11 +11,23 @@ let publicPath = path.join(__dirname, 'frontend');
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Initialize Turso client
-const db = createClient({
-  url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN
-});
+// Initialize Turso client with error handling
+let db;
+try {
+  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+    throw new Error('Missing Turso environment variables');
+  }
+  
+  db = createClient({
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN
+  });
+  
+  console.log('Turso client initialized successfully');
+} catch (err) {
+  console.error('Failed to initialize Turso client:', err);
+  process.exit(1);
+}
 
 // Create tables if not exists
 async function initializeDatabase() {
@@ -53,7 +65,10 @@ async function initializeDatabase() {
   }
 }
 
-initializeDatabase();
+// Initialize database tables
+initializeDatabase().catch(err => {
+  console.error('Database initialization failed:', err);
+});
 
 console.log('Public path:', publicPath);
 
