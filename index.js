@@ -324,7 +324,7 @@ app.get('/api/auth/check', (req, res) => {
 // Root route
 app.get('/', (req, res) => {
   if (!req.session.user) {
-    return res.redirect('/login');
+    return res.redirect('/home');
   }
   return res.redirect('/home');
 });
