@@ -84,10 +84,7 @@ app.use(session({
   }
 }));
 
-// Serve static files from the frontend directory
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
+
 
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
