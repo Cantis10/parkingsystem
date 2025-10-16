@@ -63,7 +63,21 @@ async function initializeDatabase() {
 initializeDatabase().catch(console.error);
 
 // Serve static files from the frontend directory
-app.use(express.static(path.join(__dirname, "frontend")));
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.get('/home', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'home.html'));
+});
+
+app.get('/map', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'map.html'));
+});
 
 // Add session middleware with better configuration for Vercel
 app.use(session({
@@ -271,10 +285,6 @@ app.get('/api/auth/check', (req, res) => {
   res.json({ isLoggedIn: !!req.session.user });
 });
 
-// Login route
-app.get('/login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'login.html'));
-});
 
 // Root route
 app.get('/', (req, res) => {
@@ -284,14 +294,7 @@ app.get('/', (req, res) => {
   return res.redirect('/home');
 });
 
-// Protected routes
-app.get('/home', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'home.html')); 
-});
 
-app.get('/map', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'frontend', 'map.html'));
-});
 
 // Get user data endpoint
 app.get('/api/auth/user', async (req, res) => {
@@ -331,12 +334,3 @@ app.get('/api/health', (req, res) => {
 
 // Export for Vercel
 module.exports = app;
-
-// Only listen if not in Vercel environment
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
-    console.log('Using Turso database');
-  });
-}
