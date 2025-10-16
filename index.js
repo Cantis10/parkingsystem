@@ -6,14 +6,14 @@ const session = require('express-session');
 const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-
+const path = require('path');
 
 const app = express();
 
 // Middleware to parse JSON bodies
 app.use(express.json());
 app.use(cookieParser());
-
+app.use(express.static(path.join(__dirname, 'public')));
 console.log('TURSO_DATABASE_URL:', process.env.TURSO_DATABASE_URL);
 console.log('TURSO_AUTH_TOKEN:', !!process.env.TURSO_AUTH_TOKEN);
 console.log('TURSO_AUTH_TOKEN length:', process.env.TURSO_AUTH_TOKEN.length);
@@ -50,17 +50,7 @@ app.use(session({
 
 
 
-app.get('/login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'login.html'));
-});
-
-app.get('/home', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'home.html'));
-});
-
-app.get('/map', requireAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'map.html'));
-});
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Auth middleware
 function requireAuth(req, res, next) {
