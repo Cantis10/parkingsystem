@@ -20,8 +20,8 @@ console.log('Token length:', process.env.TURSO_AUTH_TOKEN.length);
 let db;
 try {
   db = createClient({
-url: process.env.TURSO_DATABASE_URL,
-  authToken: process.env.TURSO_AUTH_TOKEN?.trim()
+    url: process.env.TURSO_DATABASE_URL,
+    authToken: process.env.TURSO_AUTH_TOKEN?.trim()
   });
   console.log('Turso client initialized');
 } catch (err) {
@@ -76,7 +76,7 @@ app.use(session({
   secret: process.env.SESSION_SECRET || 'fallback-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
-  cookie: { 
+  cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000, // 24 hours
@@ -116,7 +116,7 @@ function requireAuth(req, res, next) {
 app.get('/api/parking', async (req, res) => {
   try {
     const result = await db.execute('SELECT * FROM parking_spaces ORDER BY index_number');
-    
+
     const spaces = result.rows.map(row => ({
       id: row.id,
       state: row.state,
@@ -132,7 +132,7 @@ app.get('/api/parking', async (req, res) => {
       daysToOccupy: row.days_to_occupy,
       lastUpdate: row.last_update
     }));
-    
+
     res.json(spaces);
   } catch (err) {
     console.error('Error fetching parking spaces:', err);
@@ -212,7 +212,7 @@ app.post('/api/parking/reserve', async (req, res) => {
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-  
+
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password required' });
   }
@@ -220,8 +220,8 @@ app.post('/api/auth/login', async (req, res) => {
   // Check that Turso client is initialized correctly
   if (!db || !process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
     console.error('Turso client not initialized or missing env vars');
-    return res.status(500).json({ 
-      error: 'Server misconfiguration', 
+    return res.status(500).json({
+      error: 'Server misconfiguration',
       details: 'Check TURSO_DATABASE_URL and TURSO_AUTH_TOKEN environment variables'
     });
   }
@@ -237,25 +237,35 @@ app.post('/api/auth/login', async (req, res) => {
     }
 
     const user = result.rows[0];
-    
+
     // Set session
     req.session.user = {
       username: user.username,
       email: user.email,
       role: user.role
     };
-    
-    res.json({ 
-      username: user.username,
-      email: user.email,
-      role: user.role
+
+    // Explicitly save the session before sending the response
+    req.session.save(err => {
+      if (err) {
+        console.error('Session save error during login:', err);
+        return res.status(500).json({ error: 'Failed to save session' });
+      }
+
+      // Send success response for the client to handle the redirect
+      res.json({
+        success: true,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      });
     });
   } catch (err) {
     console.error('Login error:', err);
 
     // Extra check for auth token/header errors
     if (err.message.includes('Bearer') || err.message.includes('HTTP header')) {
-      return res.status(500).json({ 
+      return res.status(500).json({
         error: 'Database authentication error',
         details: 'Check TURSO_AUTH_TOKEN value in environment variables'
       });
@@ -279,7 +289,7 @@ app.post('/api/auth/logout', (req, res) => {
 // Register endpoint
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
-  
+
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'All fields required' });
   }
@@ -329,7 +339,7 @@ app.get('/api/auth/user', async (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ error: 'Not logged in' });
   }
-  
+
   try {
     const result = await db.execute({
       sql: 'SELECT email, password FROM accounts WHERE email = ?',
@@ -349,7 +359,7 @@ app.get('/api/auth/user', async (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ 
+  res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     env: {
