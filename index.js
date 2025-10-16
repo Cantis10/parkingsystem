@@ -50,7 +50,17 @@ app.use(session({
 
 
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.get('/login', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+});
+
+app.get('/home', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'home.html'));
+});
+
+app.get('/map', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'map.html'));
+});
 
 // Auth middleware
 function requireAuth(req, res, next) {
