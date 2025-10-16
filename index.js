@@ -33,11 +33,6 @@ try {
   process.exit(1);
 }
 
-const token = jwt.sign(
-  { username: accounts.username, email: accounts.email, role: accounts.role },
-  process.env.JWT_SECRET,
-  { expiresIn: '24h' }
-);
 
 
 // Add session middleware with better configuration for Vercel
@@ -210,20 +205,21 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = result.rows[0];
 
-   const token = jwt.sign(
-    { username: accounts.username, email: accounts.email, role: accounts.role },
-    process.env.JWT_SECRET,
-    { expiresIn: '24h' }
-  );
+const token = jwt.sign(
+  { username: user.username, email: user.email, role: user.role },
+  process.env.JWT_SECRET,
+  { expiresIn: '24h' }
+);
 
-  res.cookie('token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 24 * 60 * 60 * 1000
-  });
+res.cookie('token', token, {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax',
+  maxAge: 24 * 60 * 60 * 1000
+});
 
-  res.json({ success: true });
+res.json({ success: true });
+
 
 
   } catch (err) {
@@ -314,7 +310,7 @@ app.get('/api/auth/user', async (req, res) => {
   try {
     const result = await db.execute({
       sql: 'SELECT email, password FROM accounts WHERE email = ?',
-      args: [req.session.accounts.email]
+      args: [req.session.user.email]
     });
 
     if (result.rows.length === 0) {
