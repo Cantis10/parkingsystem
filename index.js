@@ -5,11 +5,13 @@ const path = require('path');
 const session = require('express-session');
 const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
+const cookieParser = require('cookie-parser');
 
 const app = express();
 
 // Middleware to parse JSON bodies
 app.use(express.json());
+app.use(cookieParser());
 
 console.log('TURSO_DATABASE_URL:', process.env.TURSO_DATABASE_URL);
 console.log('TURSO_AUTH_TOKEN:', !!process.env.TURSO_AUTH_TOKEN);
@@ -62,8 +64,10 @@ app.get('/map', requireAuth, (req, res) => {
 
 // Auth middleware
 function requireAuth(req, res, next) {
-  const token = req.cookies.token;
-  if (!token) return res.redirect('/login');
+  const token = req.cookies?.token; // now req.cookies exists
+  if (!token) {
+    return res.redirect('/login');
+  }
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
@@ -73,6 +77,7 @@ function requireAuth(req, res, next) {
     return res.redirect('/login');
   }
 }
+
 
 // API endpoint to get all parking spaces
 app.get('/api/parking', async (req, res) => {

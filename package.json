@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.5.0",
+    "cookie-parser": "^1.4.7",
     "express": "^5.1.0",
     "express-session": "^1.18.2",
     "jsonwebtoken": "^9.0.2",
