@@ -6,7 +6,7 @@ const session = require('express-session');
 const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const jwt = require('jsonwebtoken');
+
 
 const app = express();
 
