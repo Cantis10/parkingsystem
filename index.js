@@ -1,46 +1,71 @@
 //logged by iyad
 
-const express = require('express'); // Import Express framework
-const path = require('path'); // Import path module for handling file paths
+const express = require('express');
+const path = require('path');
 const session = require('express-session');
-const app = express(); // Create an Express application
-let publicPath = path.join(__dirname, 'frontend'); // Define the path to the frontend directory
+const { createClient } = require('@libsql/client');
+
+const app = express();
+let publicPath = path.join(__dirname, 'frontend');
 
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-const sqlite3 = require('sqlite3').verbose();
-const db = new sqlite3.Database('parking_system.db');
-
-// Create accounts table if not exists
-db.run(`CREATE TABLE IF NOT EXISTS accounts (
-  username TEXT PRIMARY KEY,
-  email TEXT UNIQUE,
-  password TEXT,
-  role TEXT DEFAULT 'user',
-  slotIndexTaken TEXT,
-  locationTaken TEXT
-)`, (err) => {
-  if (err) {
-    console.error('Error creating accounts table:', err);
-  } else {
-    console.log('Accounts table ready');
-  }
+// Initialize Turso client
+const db = createClient({
+  url: process.env.TURSO_DATABASE_URL,
+  authToken: process.env.TURSO_AUTH_TOKEN
 });
 
+// Create tables if not exists
+async function initializeDatabase() {
+  try {
+    // Create accounts table
+    await db.execute(`CREATE TABLE IF NOT EXISTS accounts (
+      username TEXT PRIMARY KEY,
+      email TEXT UNIQUE,
+      password TEXT,
+      role TEXT DEFAULT 'user',
+      slotIndexTaken TEXT,
+      locationTaken TEXT
+    )`);
 
+    // Create parking_spaces table if you have one
+    await db.execute(`CREATE TABLE IF NOT EXISTS parking_spaces (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      state TEXT DEFAULT 'available',
+      exclusive TEXT,
+      price REAL,
+      index_number INTEGER UNIQUE,
+      floor INTEGER,
+      location_x REAL,
+      location_y REAL,
+      width REAL,
+      height REAL,
+      plate TEXT,
+      days_to_occupy INTEGER,
+      last_update TEXT
+    )`);
 
-console.log('Public path:', publicPath); // Log the public path for debugging
+    console.log('Database tables ready');
+  } catch (err) {
+    console.error('Error creating tables:', err);
+  }
+}
 
-app.use(express.static(path.join(__dirname, "frontend"))); // Serve static files from the frontend directory
+initializeDatabase();
+
+console.log('Public path:', publicPath);
+
+app.use(express.static(path.join(__dirname, "frontend")));
 
 // Add session middleware
 app.use(session({
-  secret: 'your-secret-key',
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    secure: false, // set to true if using https
+    secure: process.env.NODE_ENV === 'production',
     maxAge: 24 * 60 * 60 * 1000 // 24 hours
   }
 }));
@@ -48,7 +73,7 @@ app.use(session({
 // Auth middleware
 function requireAuth(req, res, next) {
   if (!req.session.user) {
-    if (req.xhr) { // AJAX request
+    if (req.xhr) {
       return res.status(401).json({ error: 'Authentication required' });
     }
     return res.redirect('/login');
@@ -57,35 +82,35 @@ function requireAuth(req, res, next) {
 }
 
 // API endpoint to get all parking spaces
-app.get('/api/parking', (req, res) => {
-  db.all('SELECT * FROM parking_spaces ORDER BY index_number', (err, rows) => {
-    if (err) {
-      console.error('Error fetching parking spaces:', err);
-      res.status(500).json({ error: 'Failed to fetch parking spaces' });
-    } else {
-      // Map database columns to frontend expected format
-      const spaces = rows.map(row => ({
-        id: row.id,
-        state: row.state,
-        feature: row.exclusive,
-        price: row.price,
-        index: row.index_number,
-        floor: row.floor,
-        locationX: row.location_x,
-        locationY: row.location_y,
-        sizeX: row.width,
-        sizeY: row.height,
-        plate: row.plate,
-        daysToOccupy: row.days_to_occupy,
-        lastUpdate: row.last_update
-      }));
-      res.json(spaces);
-    }
-  });
+app.get('/api/parking', async (req, res) => {
+  try {
+    const result = await db.execute('SELECT * FROM parking_spaces ORDER BY index_number');
+    
+    const spaces = result.rows.map(row => ({
+      id: row.id,
+      state: row.state,
+      feature: row.exclusive,
+      price: row.price,
+      index: row.index_number,
+      floor: row.floor,
+      locationX: row.location_x,
+      locationY: row.location_y,
+      sizeX: row.width,
+      sizeY: row.height,
+      plate: row.plate,
+      daysToOccupy: row.days_to_occupy,
+      lastUpdate: row.last_update
+    }));
+    
+    res.json(spaces);
+  } catch (err) {
+    console.error('Error fetching parking spaces:', err);
+    res.status(500).json({ error: 'Failed to fetch parking spaces' });
+  }
 });
 
 // API endpoint to reserve a parking space
-app.post('/api/parking/reserve', (req, res) => {
+app.post('/api/parking/reserve', async (req, res) => {
   const { index, plate, days } = req.body;
 
   console.log('Reservation request:', { index, plate, days });
@@ -96,17 +121,18 @@ app.post('/api/parking/reserve', (req, res) => {
 
   const currentTime = new Date().toISOString();
 
-  // First check if the space is available
-  db.get('SELECT * FROM parking_spaces WHERE index_number = ?', [index], (err, row) => {
-    if (err) {
-      console.error('Error checking space:', err);
-      return res.status(500).json({ error: 'Database error' });
-    }
+  try {
+    // First check if the space is available
+    const checkResult = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE index_number = ?',
+      args: [index]
+    });
 
-    if (!row) {
+    if (checkResult.rows.length === 0) {
       return res.status(404).json({ error: 'Parking space not found' });
     }
 
+    const row = checkResult.rows[0];
     console.log('Found space:', row);
 
     if (row.state !== 'available' && row.exclusive !== 'available') {
@@ -114,84 +140,83 @@ app.post('/api/parking/reserve', (req, res) => {
     }
 
     // Update the parking space
-    db.run(
-      `UPDATE parking_spaces 
-       SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
-       WHERE index_number = ?`,
-      ['taken', plate, days, currentTime, index],
-      function(err) {
-        if (err) {
-          console.error('Error updating parking space:', err);
-          return res.status(500).json({ error: 'Failed to reserve parking space' });
-        }
+    await db.execute({
+      sql: `UPDATE parking_spaces 
+            SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
+            WHERE index_number = ?`,
+      args: ['taken', plate, days, currentTime, index]
+    });
 
-        console.log(`Updated ${this.changes} row(s)`);
+    // Fetch the updated row
+    const updatedResult = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE index_number = ?',
+      args: [index]
+    });
 
-        // Return the updated row
-        db.get('SELECT * FROM parking_spaces WHERE index_number = ?', [index], (err, updatedRow) => {
-          if (err) {
-            console.error('Error fetching updated row:', err);
-            return res.status(500).json({ error: 'Reservation successful but failed to fetch updated data' });
-          }
+    const updatedRow = updatedResult.rows[0];
+    const updatedSpace = {
+      id: updatedRow.id,
+      state: updatedRow.state,
+      feature: updatedRow.exclusive,
+      price: updatedRow.price,
+      index: updatedRow.index_number,
+      floor: updatedRow.floor,
+      locationX: updatedRow.location_x,
+      locationY: updatedRow.location_y,
+      sizeX: updatedRow.width,
+      sizeY: updatedRow.height,
+      plate: updatedRow.plate,
+      daysToOccupy: updatedRow.days_to_occupy,
+      lastUpdate: updatedRow.last_update
+    };
 
-          const updatedSpace = {
-            id: updatedRow.id,
-            state: updatedRow.state,
-            feature: updatedRow.exclusive,
-            price: updatedRow.price,
-            index: updatedRow.index_number,
-            floor: updatedRow.floor,
-            locationX: updatedRow.location_x,
-            locationY: updatedRow.location_y,
-            sizeX: updatedRow.width,
-            sizeY: updatedRow.height,
-            plate: updatedRow.plate,
-            daysToOccupy: updatedRow.days_to_occupy,
-            lastUpdate: updatedRow.last_update
-          };
-
-          console.log('Reservation successful:', updatedSpace);
-          res.json(updatedSpace);
-        });
-      }
-    );
-  });
+    console.log('Reservation successful:', updatedSpace);
+    res.json(updatedSpace);
+  } catch (err) {
+    console.error('Error during reservation:', err);
+    res.status(500).json({ error: 'Failed to reserve parking space' });
+  }
 });
 
-// Update login endpoint to set session
-app.post('/api/auth/login', (req, res) => {
+// Login endpoint
+app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   
   if (!email || !password) {
     return res.status(400).json({ error: 'Email and password required' });
   }
 
-  db.get('SELECT * FROM accounts WHERE email = ? AND password = ?', 
-    [email, password],
-    (err, user) => {
-      if (err) {
-        return res.status(500).json({ error: 'Database error' });
-      }
-      if (!user) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
-      
-      // Set session
-      req.session.user = {
-        username: user.username,
-        email: user.email,
-        role: user.role
-      };
-      
-      res.json({ 
-        username: user.username,
-        email: user.email,
-        role: user.role
-      });
+  try {
+    const result = await db.execute({
+      sql: 'SELECT * FROM accounts WHERE email = ? AND password = ?',
+      args: [email, password]
     });
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const user = result.rows[0];
+    
+    // Set session
+    req.session.user = {
+      username: user.username,
+      email: user.email,
+      role: user.role
+    };
+    
+    res.json({ 
+      username: user.username,
+      email: user.email,
+      role: user.role
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Database error' });
+  }
 });
 
-// Add logout endpoint
+// Logout endpoint
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy((err) => {
     if (err) {
@@ -201,46 +226,47 @@ app.post('/api/auth/logout', (req, res) => {
   });
 });
 
-// Add register endpoint
-app.post('/api/auth/register', (req, res) => {
+// Register endpoint
+app.post('/api/auth/register', async (req, res) => {
   const { username, email, password } = req.body;
   
   if (!username || !email || !password) {
     return res.status(400).json({ error: 'All fields required' });
   }
 
-  // Check if email or username already exists
-  db.get('SELECT * FROM accounts WHERE email = ? OR username = ?', [email, username], (err, existing) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    if (existing) {
+  try {
+    // Check if email or username already exists
+    const checkResult = await db.execute({
+      sql: 'SELECT * FROM accounts WHERE email = ? OR username = ?',
+      args: [email, username]
+    });
+
+    if (checkResult.rows.length > 0) {
       return res.status(409).json({ error: 'Email or username already exists' });
     }
 
     // Insert new user
-    db.run('INSERT INTO accounts (username, email, password, role) VALUES (?, ?, ?, ?)',
-      [username, email, password, 'user'],
-      function(err) {
-        if (err) {
-          console.error('Registration error:', err);
-          return res.status(500).json({ error: 'Failed to register user' });
-        }
-        res.json({ success: true, username, email });
-      });
-  });
+    await db.execute({
+      sql: 'INSERT INTO accounts (username, email, password, role) VALUES (?, ?, ?, ?)',
+      args: [username, email, password, 'user']
+    });
+
+    res.json({ success: true, username, email });
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ error: 'Failed to register user' });
+  }
 });
 
-// Add session check endpoint
+// Session check endpoint
 app.get('/api/auth/check', (req, res) => {
   res.json({ isLoggedIn: !!req.session.user });
 });
 
-// Update login route to handle auto-login
+// Login route
 app.get('/login', (req, res) => {
   if (req.session.user) {
     if (req.query.email && req.query.pass) {
-      // If credentials provided, show login page with auto-fill
       res.sendFile(path.join(publicPath, 'login.html'));
     }
   } else {
@@ -248,7 +274,7 @@ app.get('/login', (req, res) => {
   }
 });
 
-// Root route - redirect to appropriate page based on auth status
+// Root route
 app.get('/', (req, res) => {
   if (!req.session.user) {
     return res.redirect('/login');
@@ -256,7 +282,7 @@ app.get('/', (req, res) => {
   return res.redirect('/home');
 });
 
-// Protected routes - require authentication
+// Protected routes
 app.get('/home', requireAuth, (req, res) => {
   res.sendFile(path.join(publicPath, 'home.html')); 
 });
@@ -265,23 +291,31 @@ app.get('/map', requireAuth, (req, res) => {
   res.sendFile(path.join(publicPath, 'map.html'));
 });
 
-// Add endpoint to get user data
-app.get('/api/auth/user', (req, res) => {
+// Get user data endpoint
+app.get('/api/auth/user', async (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ error: 'Not logged in' });
   }
   
-  db.get('SELECT email, password FROM accounts WHERE email = ?', 
-    [req.session.user.email],
-    (err, user) => {
-      if (err || !user) {
-        return res.status(500).json({ error: 'Failed to fetch user data' });
-      }
-      res.json(user);
+  try {
+    const result = await db.execute({
+      sql: 'SELECT email, password FROM accounts WHERE email = ?',
+      args: [req.session.user.email]
     });
+
+    if (result.rows.length === 0) {
+      return res.status(500).json({ error: 'Failed to fetch user data' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error fetching user:', err);
+    res.status(500).json({ error: 'Failed to fetch user data' });
+  }
 });
 
-app.listen(3000, () => {
-  console.log('Server is running on http://localhost:3000');
-  console.log('Database reset with unique parking space indexes');
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+  console.log('Using Turso database');
 });
