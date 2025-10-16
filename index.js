@@ -212,6 +212,15 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'Email and password required' });
   }
 
+  // Check that Turso client is initialized correctly
+  if (!db || !process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
+    console.error('Turso client not initialized or missing env vars');
+    return res.status(500).json({ 
+      error: 'Server misconfiguration', 
+      details: 'Check TURSO_DATABASE_URL and TURSO_AUTH_TOKEN environment variables'
+    });
+  }
+
   try {
     const result = await db.execute({
       sql: 'SELECT * FROM accounts WHERE email = ? AND password = ?',
@@ -238,9 +247,19 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (err) {
     console.error('Login error:', err);
+
+    // Extra check for auth token/header errors
+    if (err.message.includes('Bearer') || err.message.includes('HTTP header')) {
+      return res.status(500).json({ 
+        error: 'Database authentication error',
+        details: 'Check TURSO_AUTH_TOKEN value in environment variables'
+      });
+    }
+
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
+
 
 // Logout endpoint
 app.post('/api/auth/logout', (req, res) => {
