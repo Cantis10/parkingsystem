@@ -6,24 +6,18 @@ const session = require('express-session');
 const { createClient } = require('@libsql/client');
 
 const app = express();
-let publicPath = path.join(__dirname, 'frontend');
 
 // Middleware to parse JSON bodies
 app.use(express.json());
 
-// Initialize Turso client with error handling
+// Initialize Turso client
 let db;
 try {
-  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-    throw new Error('Missing Turso environment variables');
-  }
-  
   db = createClient({
     url: process.env.TURSO_DATABASE_URL,
     authToken: process.env.TURSO_AUTH_TOKEN
   });
-  
-  console.log('Turso client initialized successfully');
+  console.log('Turso client initialized');
 } catch (err) {
   console.error('Failed to initialize Turso client:', err);
   process.exit(1);
@@ -42,7 +36,7 @@ async function initializeDatabase() {
       locationTaken TEXT
     )`);
 
-    // Create parking_spaces table if you have one
+    // Create parking_spaces table
     await db.execute(`CREATE TABLE IF NOT EXISTS parking_spaces (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       state TEXT DEFAULT 'available',
@@ -65,30 +59,29 @@ async function initializeDatabase() {
   }
 }
 
-// Initialize database tables
-initializeDatabase().catch(err => {
-  console.error('Database initialization failed:', err);
-});
+// Initialize database on startup
+initializeDatabase().catch(console.error);
 
-console.log('Public path:', publicPath);
-
+// Serve static files from the frontend directory
 app.use(express.static(path.join(__dirname, "frontend")));
 
-// Add session middleware
+// Add session middleware with better configuration for Vercel
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  secret: process.env.SESSION_SECRET || 'fallback-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
   cookie: { 
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: 'lax'
   }
 }));
 
 // Auth middleware
 function requireAuth(req, res, next) {
   if (!req.session.user) {
-    if (req.xhr) {
+    if (req.xhr || req.headers.accept?.includes('application/json')) {
       return res.status(401).json({ error: 'Authentication required' });
     }
     return res.redirect('/login');
@@ -120,7 +113,7 @@ app.get('/api/parking', async (req, res) => {
     res.json(spaces);
   } catch (err) {
     console.error('Error fetching parking spaces:', err);
-    res.status(500).json({ error: 'Failed to fetch parking spaces' });
+    res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
   }
 });
 
@@ -189,7 +182,7 @@ app.post('/api/parking/reserve', async (req, res) => {
     res.json(updatedSpace);
   } catch (err) {
     console.error('Error during reservation:', err);
-    res.status(500).json({ error: 'Failed to reserve parking space' });
+    res.status(500).json({ error: 'Failed to reserve parking space', details: err.message });
   }
 });
 
@@ -227,7 +220,7 @@ app.post('/api/auth/login', async (req, res) => {
     });
   } catch (err) {
     console.error('Login error:', err);
-    res.status(500).json({ error: 'Database error' });
+    res.status(500).json({ error: 'Database error', details: err.message });
   }
 });
 
@@ -269,7 +262,7 @@ app.post('/api/auth/register', async (req, res) => {
     res.json({ success: true, username, email });
   } catch (err) {
     console.error('Registration error:', err);
-    res.status(500).json({ error: 'Failed to register user' });
+    res.status(500).json({ error: 'Failed to register user', details: err.message });
   }
 });
 
@@ -280,13 +273,7 @@ app.get('/api/auth/check', (req, res) => {
 
 // Login route
 app.get('/login', (req, res) => {
-  if (req.session.user) {
-    if (req.query.email && req.query.pass) {
-      res.sendFile(path.join(publicPath, 'login.html'));
-    }
-  } else {
-    res.sendFile(path.join(publicPath, 'login.html'));
-  }
+  res.sendFile(path.join(__dirname, 'frontend', 'login.html'));
 });
 
 // Root route
@@ -299,11 +286,11 @@ app.get('/', (req, res) => {
 
 // Protected routes
 app.get('/home', requireAuth, (req, res) => {
-  res.sendFile(path.join(publicPath, 'home.html')); 
+  res.sendFile(path.join(__dirname, 'frontend', 'home.html')); 
 });
 
 app.get('/map', requireAuth, (req, res) => {
-  res.sendFile(path.join(publicPath, 'map.html'));
+  res.sendFile(path.join(__dirname, 'frontend', 'map.html'));
 });
 
 // Get user data endpoint
@@ -325,12 +312,31 @@ app.get('/api/auth/user', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error fetching user:', err);
-    res.status(500).json({ error: 'Failed to fetch user data' });
+    res.status(500).json({ error: 'Failed to fetch user data', details: err.message });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  console.log('Using Turso database');
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    env: {
+      hasTursoUrl: !!process.env.TURSO_DATABASE_URL,
+      hasTursoToken: !!process.env.TURSO_AUTH_TOKEN,
+      hasSessionSecret: !!process.env.SESSION_SECRET
+    }
+  });
 });
+
+// Export for Vercel
+module.exports = app;
+
+// Only listen if not in Vercel environment
+if (process.env.NODE_ENV !== 'production') {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log('Using Turso database');
+  });
+}
