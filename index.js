@@ -6,6 +6,7 @@ const session = require('express-session');
 const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 
@@ -32,7 +33,11 @@ try {
   process.exit(1);
 }
 
-
+const token = jwt.sign(
+  { username: user.username, email: user.email, role: user.role },
+  process.env.JWT_SECRET,
+  { expiresIn: '24h' }
+);
 
 
 // Add session middleware with better configuration for Vercel
@@ -287,6 +292,11 @@ app.get('/api/auth/check', (req, res) => {
 
 // Root route
 app.get('/', (req, res) => {
+
+  if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable not set');
+}
+
   if (!req.session.user) {
     return res.redirect('/home');
   }
