@@ -8,7 +8,7 @@ export default function handler(req, res) {
   let html = fs.readFileSync(htmlPath, 'utf8');
   const css = fs.readFileSync(cssPath, 'utf8');
 
-  // Inject CSS into HTML head
+  // Inject CSS
   html = html.replace('</head>', `<style>${css}</style></head>`);
 
   res.setHeader('Content-Type', 'text/html');
