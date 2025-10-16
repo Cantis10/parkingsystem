@@ -12,6 +12,7 @@ app.use(express.json());
 
 console.log('TURSO_DATABASE_URL:', process.env.TURSO_DATABASE_URL);
 console.log('TURSO_AUTH_TOKEN:', !!process.env.TURSO_AUTH_TOKEN);
+console.log('TURSO_AUTH_TOKEN length:', process.env.TURSO_AUTH_TOKEN.length);
 
 // Initialize Turso client
 let db;
