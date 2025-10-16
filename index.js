@@ -34,7 +34,7 @@ try {
 }
 
 const token = jwt.sign(
-  { username: user.username, email: user.email, role: user.role },
+  { username: accounts.username, email: accounts.email, role: accounts.role },
   process.env.JWT_SECRET,
   { expiresIn: '24h' }
 );
@@ -211,7 +211,7 @@ app.post('/api/auth/login', async (req, res) => {
     const user = result.rows[0];
 
    const token = jwt.sign(
-    { username: user.username, email: user.email, role: user.role },
+    { username: accounts.username, email: accounts.email, role: accounts.role },
     process.env.JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -314,7 +314,7 @@ app.get('/api/auth/user', async (req, res) => {
   try {
     const result = await db.execute({
       sql: 'SELECT email, password FROM accounts WHERE email = ?',
-      args: [req.session.user.email]
+      args: [req.session.accounts.email]
     });
 
     if (result.rows.length === 0) {
