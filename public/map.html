@@ -51,11 +51,15 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
-        $(document).ready(function() {
+    $(document).ready(function() {
 
     // Get location_id from URL query parameter
     const urlParams = new URLSearchParams(window.location.search);
     const locationId = urlParams.get('location_id');
+
+    // --- LOGGING ---
+    console.log(`Current Location ID: ${locationId}`);
+    // --- END LOGGING ---
 
     if (!locationId) {
         alert('No location selected. Redirecting to home.');
@@ -81,6 +85,11 @@
             success: function(data) {
                 mapData.maps = data.map(m => `/images/map/${m.floorsImageIndex}`);
                 mapData.floors = data.map(m => m.floor);
+                
+                // --- LOGGING ---
+                console.log('Successfully fetched maps. Floors available:', mapData.floors);
+                // --- END LOGGING ---
+                
                 if (callback) callback();
             },
             error: function(xhr, status, error) {
@@ -98,6 +107,11 @@
             dataType: 'json',
             success: function(data) {
                 parkingSpaces = data;
+                
+                // --- LOGGING ---
+                console.log(`Successfully fetched parking spaces. Rows found: ${parkingSpaces.length}`);
+                // --- END LOGGING ---
+                
                 if (callback) callback();
             },
             error: function(xhr, status, error) {
@@ -107,8 +121,12 @@
     }
 
     function loadFloor(index, containerSelector) {
-        if (mapData.floors.length === 0) return;
+        if (mapData.floors.length === 0) {
+            console.warn('No floor data available to load.');
+            return;
+        }
 
+        // Get the floor value for the current index.
         const floor = mapData.floors[index];
         const $container = $(containerSelector);
 
@@ -117,16 +135,30 @@
 
         $container.find('.parking-space').remove();
 
-        parkingSpaces
-            .filter(space => space.floor === floor)
+        // --- FIX AND LOGGING IN FILTERING ---
+        console.log(`Attempting to load floor: ${floor} (Index: ${index}) into ${containerSelector}`);
+        
+        const spacesToLoad = parkingSpaces
+            // FIX: Use loose equality (==) for floor comparison 
+            // to handle cases where one is a string and the other is a number.
+            .filter(space => space.floor == floor);
+
+        console.log(`Found ${spacesToLoad.length} parking spaces for floor: ${floor}`);
+        
+        if (spacesToLoad.length > 0) {
+            console.log('Example space data:', spacesToLoad[0]);
+        }
+        // --- END FIX AND LOGGING ---
+
+        spacesToLoad
             .forEach(space => {
                 const spaceDiv = $('<div>', {
-                    'class': `parking-space state-${space.state}`,
+                    'class': `parking-space state-${String(space.state).toLowerCase()}`, // Ensure state class is lowercase
                     'data-index': space.index,
                     'title': `<b>Space #${space.index}</b><br>
-                              State: ${space.state.charAt(0).toUpperCase() + space.state.slice(1)}<br>
-                              Type: ${space.feature}<br>
-                              Price: PHP ${parseFloat(space.price).toFixed(2)}`
+                             State: ${String(space.state).charAt(0).toUpperCase() + String(space.state).slice(1).toLowerCase()}<br>
+                             Type: ${space.feature}<br>
+                             Price: PHP ${parseFloat(space.price).toFixed(2)}`
                 }).css({
                     top: `${space.locationY}%`,
                     left: `${space.locationX}%`,
@@ -183,7 +215,8 @@
     // Click handler to open reservation/inspection modal
     $('#map-wrapper').on('click', '.parking-space', function () {
         const idx = $(this).data('index');
-        const space = parkingSpaces.find(s => s.index === idx || s.index == idx);
+        // FIX: Use loose equality (==) for finding space index
+        const space = parkingSpaces.find(s => s.index == idx); 
 
         if (!space) return;
 
@@ -200,7 +233,13 @@
 
         const featureVal = String(space.feature || '').toLowerCase();
         const stateVal = String(space.state || '').toLowerCase();
-        const isAvailable = (featureVal === 'available') || (stateVal === 'available');
+        
+        // Revised check for availability based on state
+        const isAvailable = (stateVal === 'available');
+
+        // --- LOGGING ---
+        console.log(`Clicked space #${space.index}. State: ${space.state}. Available: ${isAvailable}`);
+        // --- END LOGGING ---
 
         if (isAvailable) {
             $('#reserve-form-row').show();
@@ -222,6 +261,10 @@
         const index = $('#reserve-index').val();
         const plate = $('#reserve-plate').val().trim();
         const days = parseInt($('#reserve-days').val(), 10);
+        
+        // --- LOGGING ---
+        console.log(`Submitting reservation for index: ${index}, plate: ${plate}, days: ${days}`);
+        // --- END LOGGING ---
 
         if (!plate || !days || days <= 0) {
             alert('Please enter a valid plate and number of days.');
@@ -234,6 +277,9 @@
             contentType: 'application/json',
             data: JSON.stringify({ index: index, plate: plate, days: days }),
             success: function (updatedRow) {
+                // --- LOGGING ---
+                console.log('Reservation successful. Refreshing data.');
+                // --- END LOGGING ---
                 fetchParkingSpaces(function() {
                     loadFloor(currentFloorIndex, activeContainerSelector);
                     $('#reserveModal').modal('hide');
@@ -247,6 +293,9 @@
                 } catch (e) {
                     msg = xhr.statusText || msg;
                 }
+                // --- LOGGING ---
+                console.error('Reservation failed:', msg, xhr.status);
+                // --- END LOGGING ---
                 alert(msg);
             }
         });
@@ -256,10 +305,18 @@
     fetchMaps(function() {
         fetchParkingSpaces(function() {
             if (mapData.floors.length > 0) {
+                
+                // --- LOGGING ---
+                console.log('Initialization complete. Loading first floor...');
+                // --- END LOGGING ---
+                
                 loadFloor(currentFloorIndex, activeContainerSelector);
 
                 // Optional: refresh every 5 seconds
                 setInterval(function() {
+                    // --- LOGGING ---
+                    console.log('Auto-refreshing parking space data...');
+                    // --- END LOGGING ---
                     fetchParkingSpaces(function() {
                         loadFloor(currentFloorIndex, activeContainerSelector);
                     });
@@ -270,8 +327,7 @@
         });
     });
 });
-
-    </script>
+</script>
 
     <!-- Reservation Modal -->
     <div class="modal fade" id="reserveModal" tabindex="-1" aria-labelledby="reserveModalLabel" aria-hidden="true">
