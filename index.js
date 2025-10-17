@@ -337,6 +337,27 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.get('/api/locations', async (req, res) => {
+  try {
+    const result = await db.execute('SELECT * FROM locations');
+
+    const locations = result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      imageIndex: row.image_index,
+      averagePrice: row.average_price,
+      addressLocation: row.address_location,
+      availableSpots: row.available_spots,
+      redirect: row.redirect || '/map'
+    }));
+
+    res.json(locations);
+  } catch (err) {
+    console.error('Error fetching locations:', err);
+    res.status(500).json({ error: 'Failed to fetch locations', details: err.message });
+  }
+});
+
 // Export for Vercel
 module.exports = app;
 

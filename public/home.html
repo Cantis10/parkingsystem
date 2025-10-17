@@ -7,7 +7,41 @@
     <title>Basic Website</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
-   <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .address-icon {
+            cursor: pointer;
+            position: relative;
+        }
+        .address-popup {
+            display: none;
+            position: absolute;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1000;
+            min-width: 200px;
+            max-width: 300px;
+            bottom: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            margin-bottom: 10px;
+        }
+        .address-icon:hover .address-popup {
+            display: block;
+        }
+        .address-popup::after {
+            content: '';
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            transform: translateX(-50%);
+            border: 8px solid transparent;
+            border-top-color: white;
+        }
+    </style>
 </head>
 
 <body>
@@ -21,7 +55,7 @@
             <a class="navbar-brand d-flex align-items-center" href="#">
                 Urban parker<i class="fas fa-bell ms-2"></i>
             </a>
-            </div>
+        </div>
     </nav>
 
     <div class="sidebar">
@@ -53,14 +87,6 @@
                     Show cards with no spots
                 </label>
             </div>
-            <div class="mb-3">
-                <label for="filter-min-price" class="form-label">Price Range (PHP)</label>
-                <div class="input-group">
-                    <input type="number" class="form-control" id="filter-min-price" min="0" placeholder="Min">
-                    <span class="input-group-text">-</span>
-                    <input type="number" class="form-control" id="filter-max-price" min="0" placeholder="Max">
-                </div>
-            </div>
             <button type="submit" class="btn btn-primary w-100 mb-2">Filter</button>
             <button type="button" id="clear-filters-btn" class="btn btn-secondary w-100">Clear Filters</button>
         </form>
@@ -69,54 +95,40 @@
     <div class="content">
         <h1 class="mb-4">Welcome!</h1>
         <div id="card-container" class="row">
+            <div class="col-12 text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </div>
         </div>
     </div>
-
-      <div id="output">Loading...</div>
 
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         $(document).ready(function () {
-            // Generate a dataset for the cards
-            const cardData = [];
-            const names = [
-                "Park - Quezon city Branch",
-            ];
-            const images = [
-                "images/shop.png",
+            let cardData = [];
 
-            ];
-            const redirects = [
-                "/map",
-            ]
-
-            const slots = [
-                1,
-            ]
-
-            for (let i = 0; i < names.length; i++) {
-                cardData.push({
-                    name: names[i],
-                    availableSpots: slots[i],
-                    price: Math.random() * 1000,
-                    image: images[i],
-                    redirect: redirects[i]
+            // Function to load locations from API
+            function loadLocations() {
+                $.get('/api/locations', function(data) {
+                    cardData = data;
+                    renderCards(cardData);
+                }).fail(function(err) {
+                    console.error('Error loading locations:', err);
+                    $('#card-container').html('<div class="col-12 text-center text-danger">Failed to load locations. Please try again later.</div>');
                 });
             }
 
             // Function to generate a single card from data
             function createCard(data) {
                 const numBgColor = data.availableSpots > 0 ? 'green' : 'red';
-                const formattedCurrency = new Intl.NumberFormat('en-PH', {
-                    style: 'currency',
-                    currency: 'PHP'
-                }).format(data.price);
+                const imagePath = `/images/${data.imageIndex}`;
 
                 // If available, wrap with <a>
                 const cardContent = `
         <div class="card h-100 ${data.availableSpots > 0 ? 'card-hover' : 'disabled'}">
-            <img src="${data.image}" class="card-img-top" alt="${data.name}">
+            <img src="${imagePath}" class="card-img-top" alt="${data.name}">
 
             <div class="card-body">
                 <h5 class="card-title text-center my-3">${data.name}</h5>
@@ -125,10 +137,13 @@
                         ${data.availableSpots}
                     </div>
                     <div class="col text-center text-secondary py-2">
-                        ${formattedCurrency}
+                        ${data.averagePrice}
                     </div>
-                    <div class="col text-center py-2">
-                        <i class="fas fa-comment fa-lg text-primary"></i>
+                    <div class="col text-center py-2 address-icon">
+                        <i class="fas fa-map-marker-alt fa-lg text-primary"></i>
+                        <div class="address-popup">
+                            <small>${data.addressLocation}</small>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -154,7 +169,6 @@
                 }
             }
 
-
             // Function to render cards to the page
             function renderCards(cardsToRender) {
                 $('#card-container').empty();
@@ -167,8 +181,8 @@
                 }
             }
 
-            // Initial rendering of all cards
-            renderCards(cardData);
+            // Load locations on page load
+            loadLocations();
 
             // Pop-up logic
             const $searchIconRow = $('#search-icon-row');
@@ -212,17 +226,12 @@
                 e.preventDefault();
                 const nameFilter = $('#filter-name').val().toLowerCase();
                 const includeZeroSpots = $('#filter-include-zero-spots').is(':checked');
-                const minPriceFilter = parseFloat($('#filter-min-price').val());
-                const maxPriceFilter = parseFloat($('#filter-max-price').val());
 
                 const filteredCards = cardData.filter(card => {
                     const nameMatch = card.name.toLowerCase().includes(nameFilter);
                     const spotsMatch = includeZeroSpots ? (card.availableSpots >= 0) : (card.availableSpots > 0);
 
-                    const priceMatch = (isNaN(minPriceFilter) || card.price >= minPriceFilter) &&
-                        (isNaN(maxPriceFilter) || card.price <= maxPriceFilter);
-
-                    return nameMatch && spotsMatch && priceMatch;
+                    return nameMatch && spotsMatch;
                 });
 
                 renderCards(filteredCards);
@@ -235,38 +244,18 @@
                 renderCards(cardData);
                 togglePopup();
             });
+
+            // Check login status and update login button
+            $.get('/api/auth/check', function(data) {
+                if (data.isLoggedIn) {
+                    // Get user data to include in login URL
+                    $.get('/api/auth/user', function(userData) {
+                        const loginUrl = `/login?email=${encodeURIComponent(userData.email)}&pass=${encodeURIComponent(userData.password)}`;
+                        $('#loginButton a').attr('href', loginUrl);
+                    });
+                }
+            });
         });
-
-        $(document).ready(function() {
-    function refreshData() {
-      $.get("/json-data", function(data) {
-        $("#output").html(`
-          <p>${data.message}</p>
-          <p>Server time: ${data.time}</p>
-        `);
-      });
-    }
-
-    refreshData();             // load immediately
-    setInterval(refreshData, 5000); // refresh every 5s
-  });
-
-
-    $(document).ready(function () {
-        // Check login status and update login button
-        $.get('/api/auth/check', function(data) {
-            if (data.isLoggedIn) {
-                // Get user data to include in login URL
-                $.get('/api/auth/user', function(userData) {
-                    const loginUrl = `/login?email=${encodeURIComponent(userData.email)}&pass=${encodeURIComponent(userData.password)}`;
-                    $('#loginButton a').attr('href', loginUrl);
-                });
-            }
-        });
-    });
-
-
-
     </script>
 
 </body>
