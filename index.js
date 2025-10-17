@@ -134,20 +134,20 @@ app.post('/api/auth/login', async (req, res) => {
 
     const user = result.rows[0];
 
-const token = jwt.sign(
-  { username: user.username, email: user.email, role: user.role },
-  process.env.JWT_SECRET,
-  { expiresIn: '24h' }
-);
+    const token = jwt.sign(
+      { username: user.username, email: user.email, role: user.role, license_plate: user.license_plate },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
-res.cookie('token', token, {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax',
-  maxAge: 24 * 60 * 60 * 1000
-});
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000
+    });
 
-res.json({ success: true });
+    res.json({ success: true });
 
 
 
@@ -179,14 +179,13 @@ app.post('/api/auth/logout', (req, res) => {
 
 // Register endpoint
 app.post('/api/auth/register', async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, email, password, license_plate } = req.body; // ✅ added license_plate
 
-  if (!username || !email || !password) {
+  if (!username || !email || !password || !license_plate) { // ✅ updated validation
     return res.status(400).json({ error: 'All fields required' });
   }
 
   try {
-    // Check if email or username already exists
     const checkResult = await db.execute({
       sql: 'SELECT * FROM accounts WHERE email = ? OR username = ?',
       args: [email, username]
@@ -196,13 +195,12 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(409).json({ error: 'Email or username already exists' });
     }
 
-    // Insert new user
     await db.execute({
-      sql: 'INSERT INTO accounts (username, email, password, role) VALUES (?, ?, ?, ?)',
-      args: [username, email, password, 'user']
+      sql: 'INSERT INTO accounts (username, email, password, role, license_plate) VALUES (?, ?, ?, ?, ?)',
+      args: [username, email, password, 'user', license_plate]
     });
 
-    res.json({ success: true, username, email });
+    res.json({ success: true, username, email, license_plate });
   } catch (err) {
     console.error('Registration error:', err);
     res.status(500).json({ error: 'Failed to register user', details: err.message });
@@ -219,8 +217,8 @@ app.get('/api/auth/check', (req, res) => {
 app.get('/', (req, res) => {
 
   if (!process.env.JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable not set');
-}
+    throw new Error('JWT_SECRET environment variable not set');
+  }
 
   if (!req.session.user) {
     return res.redirect('/home');
@@ -238,10 +236,9 @@ app.get('/api/auth/user', async (req, res) => {
 
   try {
     const result = await db.execute({
-      sql: 'SELECT email, password FROM accounts WHERE email = ?',
+      sql: 'SELECT email, username, license_plate FROM accounts WHERE email = ?',
       args: [req.session.user.email]
     });
-
     if (result.rows.length === 0) {
       return res.status(500).json({ error: 'Failed to fetch user data' });
     }
@@ -269,88 +266,88 @@ app.get('/api/health', (req, res) => {
 
 // API endpoint to get maps for a specific location
 app.get('/api/maps/:location_id', async (req, res) => {
-    try {
-        const locationId = req.params.location_id;
-        const result = await db.execute({
-            sql: 'SELECT * FROM maps WHERE location_index = ? ORDER BY floor ASC',
-            args: [locationId]
-        });
+  try {
+    const locationId = req.params.location_id;
+    const result = await db.execute({
+      sql: 'SELECT * FROM maps WHERE location_index = ? ORDER BY floor ASC',
+      args: [locationId]
+    });
 
-        const maps = result.rows.map(row => ({
-            id: row.id,
-            // 💡 FIX: Ensure floor is parsed as an integer for frontend consistency
-            locationIndex: parseInt(row.location_index, 10),
-            floor: parseInt(row.floor, 10), 
-            floorsImageIndex: row.floors_image_index
-        }));
-        
-        // Log the data type being sent for verification
-        if (maps.length > 0) {
-            console.log(`[API Maps Success] Location ${locationId}: Found ${maps.length} maps. First floor type: ${typeof maps[0].floor}, Value: ${maps[0].floor}`);
-        } else {
-            console.log(`[API Maps Success] Location ${locationId}: Found 0 maps.`);
-        }
+    const maps = result.rows.map(row => ({
+      id: row.id,
+      // 💡 FIX: Ensure floor is parsed as an integer for frontend consistency
+      locationIndex: parseInt(row.location_index, 10),
+      floor: parseInt(row.floor, 10),
+      floorsImageIndex: row.floors_image_index
+    }));
 
-        res.json(maps);
-    } catch (err) {
-        console.error('Error fetching maps:', err);
-        res.status(500).json({ error: 'Failed to fetch maps', details: err.message });
+    // Log the data type being sent for verification
+    if (maps.length > 0) {
+      console.log(`[API Maps Success] Location ${locationId}: Found ${maps.length} maps. First floor type: ${typeof maps[0].floor}, Value: ${maps[0].floor}`);
+    } else {
+      console.log(`[API Maps Success] Location ${locationId}: Found 0 maps.`);
     }
+
+    res.json(maps);
+  } catch (err) {
+    console.error('Error fetching maps:', err);
+    res.status(500).json({ error: 'Failed to fetch maps', details: err.message });
+  }
 });
 // -----------------------------------------------------------------------------
 // API endpoint to get parking spaces for a specific location
 app.get('/api/parking/:location_id', async (req, res) => {
-    try {
-        const locationId = req.params.location_id;
-        const result = await db.execute({
-            sql: 'SELECT * FROM parking_spaces WHERE location_index = ? ORDER BY "index" ASC',
-            args: [locationId]
-        });
+  try {
+    const locationId = req.params.location_id;
+    const result = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE location_index = ? ORDER BY "index" ASC',
+      args: [locationId]
+    });
 
-        const spaces = result.rows.map(row => {
-            // CRITICAL FIX: Use Number.isInteger to check if the value is a valid integer.
-            // If the row.floor is non-numeric (NaN), default it to 0 or another known integer.
-            const parsedFloor = parseInt(row.floor, 10);
-            const floorValue = Number.isNaN(parsedFloor) ? 0 : parsedFloor; 
-            
-            return {
-                id: row.id,
-                state: row.state,
-                feature: row.exclusive,
-                price: row.price,
-                index: row.index,
-                
-                // Use the safely parsed floor value
-                floor: floorValue, 
-                
-                // Ensure other coordinates are also safely parsed
-                locationIndex: parseInt(row.location_index, 10) || 0,
-                locationX: parseInt(row.location_x, 10) || 0,
-                locationY: parseInt(row.location_y, 10) || 0,
-                sizeX: parseInt(row.width, 10) || 0,
-                sizeY: parseInt(row.height, 10) || 0,
-                plate: row.plate,
-                daysToOccupy: row.days_to_occupy,
-                lastUpdate: row.last_update,
-                restrictionStart: row.restriction_start,
-                restrictionEnd: row.restriction_end,
-                restrictionFrequency: row.restriction_frequency
-            };
-        });
-        
-        // Log the new parsed value
-        console.log('Rows found:', result.rows.length);
-        if (spaces.length > 0) {
-            console.log(`[API Parking Success - FIXED] Location ${locationId}: Found ${spaces.length} spaces. First floor type: ${typeof spaces[0].floor}, Value: ${spaces[0].floor}`);
-        } else {
-            console.log(`[API Parking Success] Location ${locationId}: Found 0 spaces.`);
-        }
-        
-        res.json(spaces);
-    } catch (err) {
-        console.error('Error fetching parking spaces:', err);
-        res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
+    const spaces = result.rows.map(row => {
+      // CRITICAL FIX: Use Number.isInteger to check if the value is a valid integer.
+      // If the row.floor is non-numeric (NaN), default it to 0 or another known integer.
+      const parsedFloor = parseInt(row.floor, 10);
+      const floorValue = Number.isNaN(parsedFloor) ? 0 : parsedFloor;
+
+      return {
+        id: row.id,
+        state: row.state,
+        feature: row.exclusive,
+        price: row.price,
+        index: row.index,
+
+        // Use the safely parsed floor value
+        floor: floorValue,
+
+        // Ensure other coordinates are also safely parsed
+        locationIndex: parseInt(row.location_index, 10) || 0,
+        locationX: parseInt(row.location_x, 10) || 0,
+        locationY: parseInt(row.location_y, 10) || 0,
+        sizeX: parseInt(row.width, 10) || 0,
+        sizeY: parseInt(row.height, 10) || 0,
+        plate: row.plate,
+        daysToOccupy: row.days_to_occupy,
+        lastUpdate: row.last_update,
+        restrictionStart: row.restriction_start,
+        restrictionEnd: row.restriction_end,
+        restrictionFrequency: row.restriction_frequency
+      };
+    });
+
+    // Log the new parsed value
+    console.log('Rows found:', result.rows.length);
+    if (spaces.length > 0) {
+      console.log(`[API Parking Success - FIXED] Location ${locationId}: Found ${spaces.length} spaces. First floor type: ${typeof spaces[0].floor}, Value: ${spaces[0].floor}`);
+    } else {
+      console.log(`[API Parking Success] Location ${locationId}: Found 0 spaces.`);
     }
+
+    res.json(spaces);
+  } catch (err) {
+    console.error('Error fetching parking spaces:', err);
+    res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
+  }
 });
 
 // API endpoint to reserve a parking space (updated to use 'index' column)
@@ -431,7 +428,7 @@ app.get('/api/debug/all-tables', async (req, res) => {
     const locations = await db.execute('SELECT * FROM locations');
     const maps = await db.execute('SELECT * FROM maps');
     const parking = await db.execute('SELECT * FROM parking_spaces');
-    
+
     res.json({
       locations: {
         count: locations.rows.length,
