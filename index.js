@@ -100,6 +100,7 @@ app.get('/api/locations', async (req, res) => {
 });
 
 
+
 // API endpoint to get parking spaces for a specific location
 
 
