@@ -64,16 +64,15 @@ app.get('/map', requireAuth, (req, res) => {
 
 // Auth middleware
 function requireAuth(req, res, next) {
-  const token = req.cookies?.token; // now req.cookies exists
-  if (!token) {
-    return res.redirect('/login');
-  }
+  const token = req.cookies?.token;
+  if (!token) return res.redirect('/login');
 
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = payload;
+    req.user = payload; // store user info
     next();
   } catch (err) {
+    console.error('JWT verification failed:', err.message);
     return res.redirect('/login');
   }
 }
@@ -81,15 +80,12 @@ function requireAuth(req, res, next) {
 function getUserFromToken(req) {
   const token = req.cookies?.token;
   if (!token) return null;
-
   try {
     return jwt.verify(token, process.env.JWT_SECRET);
-  } catch (err) {
-    console.error("Invalid token:", err);
+  } catch {
     return null;
   }
 }
-
 
 app.get('/api/locations', async (req, res) => {
   try {
@@ -120,19 +116,8 @@ app.get('/api/locations', async (req, res) => {
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
-
-  if (!email || !password) {
+  if (!email || !password)
     return res.status(400).json({ error: 'Email and password required' });
-  }
-
-  // Check that Turso client is initialized correctly
-  if (!db || !process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-    console.error('Turso client not initialized or missing env vars');
-    return res.status(500).json({
-      error: 'Server misconfiguration',
-      details: 'Check TURSO_DATABASE_URL and TURSO_AUTH_TOKEN environment variables'
-    });
-  }
 
   try {
     const result = await db.execute({
@@ -140,18 +125,22 @@ app.post('/api/auth/login', async (req, res) => {
       args: [email, password]
     });
 
-    if (result.rows.length === 0) {
+    if (result.rows.length === 0)
       return res.status(401).json({ error: 'Invalid credentials' });
-    }
 
     const user = result.rows[0];
-
     const token = jwt.sign(
-      { username: user.username, email: user.email, role: user.role, liscense_plate: user.liscense_plate },
+      {
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        liscense_plate: user.liscense_plate
+      },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
+    // Set cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -160,70 +149,54 @@ app.post('/api/auth/login', async (req, res) => {
     });
 
     res.json({ success: true });
-
-
-
   } catch (err) {
     console.error('Login error:', err);
-
-    // Extra check for auth token/header errors
-    if (err.message.includes('Bearer') || err.message.includes('HTTP header')) {
-      return res.status(500).json({
-        error: 'Database authentication error',
-        details: 'Check TURSO_AUTH_TOKEN value in environment variables'
-      });
-    }
-
-    res.status(500).json({ error: 'Database error', details: err.message });
+    res.status(500).json({ error: 'Login failed', details: err.message });
   }
 });
+
 
 
 // Logout endpoint
 app.post('/api/auth/logout', (req, res) => {
-  req.session.destroy((err) => {
-    if (err) {
-      return res.status(500).json({ error: 'Logout failed' });
-    }
-    res.json({ success: true });
-  });
+  res.clearCookie('token');
+  res.json({ success: true });
 });
+
 
 // Register endpoint
 app.post('/api/auth/register', async (req, res) => {
-  const { username, email, password, liscense_plate } = req.body; // ✅ added liscense_plate
-
-  if (!username || !email || !password || !liscense_plate) { // ✅ updated validation
+  const { username, email, password, liscense_plate } = req.body;
+  if (!username || !email || !password || !liscense_plate)
     return res.status(400).json({ error: 'All fields required' });
-  }
 
   try {
-    const checkResult = await db.execute({
+    const existing = await db.execute({
       sql: 'SELECT * FROM accounts WHERE email = ? OR username = ?',
       args: [email, username]
     });
 
-    if (checkResult.rows.length > 0) {
+    if (existing.rows.length > 0)
       return res.status(409).json({ error: 'Email or username already exists' });
-    }
 
     await db.execute({
       sql: 'INSERT INTO accounts (username, email, password, role, liscense_plate) VALUES (?, ?, ?, ?, ?)',
       args: [username, email, password, 'user', liscense_plate]
     });
 
-    res.json({ success: true, username, email, liscense_plate });
+    res.json({ success: true });
   } catch (err) {
     console.error('Registration error:', err);
-    res.status(500).json({ error: 'Failed to register user', details: err.message });
+    res.status(500).json({ error: 'Registration failed', details: err.message });
   }
 });
 
+
 // Session check endpoint
 app.get('/api/auth/check', (req, res) => {
-  res.json({ isLoggedIn: !!req.session.user });
+  const user = getUserFromToken(req);
+  res.json({ isLoggedIn: !!user });
 });
-
 
 // Root route
 app.get('/', (req, res) => {
@@ -242,23 +215,22 @@ app.get('/', (req, res) => {
 
 // Get user data endpoint
 app.get('/api/auth/user', async (req, res) => {
-  if (!req.session.user) {
-    return res.status(401).json({ error: 'Not logged in' });
-  }
+  const user = getUserFromToken(req);
+  if (!user) return res.status(401).json({ error: 'Not logged in' });
 
   try {
     const result = await db.execute({
-      sql: 'SELECT email, username, liscense_plate FROM accounts WHERE email = ?',
-      args: [req.session.user.email]
+      sql: 'SELECT email, username, liscense_plate, role FROM accounts WHERE email = ?',
+      args: [user.email]
     });
-    if (result.rows.length === 0) {
-      return res.status(500).json({ error: 'Failed to fetch user data' });
-    }
+
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: 'User not found' });
 
     res.json(result.rows[0]);
   } catch (err) {
     console.error('Error fetching user:', err);
-    res.status(500).json({ error: 'Failed to fetch user data', details: err.message });
+    res.status(500).json({ error: 'Failed to fetch user data' });
   }
 });
 
