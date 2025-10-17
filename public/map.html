@@ -150,7 +150,7 @@
     }
 
     // Determine border color based on exclusivity
-
+    let borderColor = 'blue'; // default
     const exclusive = String(space.feature || '').toLowerCase();
     if (exclusive === 'employee') borderColor = 'red';
     else if (exclusive === 'pwd') borderColor = 'lightblue';
