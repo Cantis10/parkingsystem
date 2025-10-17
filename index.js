@@ -318,7 +318,7 @@ app.get('/api/parking/:location_id', async (req, res) => {
       restrictionEnd: row.restriction_end,
       restrictionFrequency: row.restriction_frequency
     }));
-
+  console.log('Rows found:', result.rows.length);
     res.json(spaces);
   } catch (err) {
     console.error('Error fetching parking spaces:', err);
