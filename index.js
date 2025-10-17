@@ -379,12 +379,13 @@ app.post('/api/parking/reserve', async (req, res) => {
     }
 
     // Reserve the space
-    await db.execute({
-      sql: `UPDATE parking_spaces 
-            SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
-            WHERE "index" = ?`,
-      args: ['taken', plate, days, currentTime, index]
-    });
+await db.execute({
+  sql: `UPDATE parking_spaces 
+        SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
+        WHERE "index" = ?`,
+  args: ['taken', plate, days, currentTime, index]
+});
+
 
     const updatedResult = await db.execute({
       sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
@@ -443,6 +444,60 @@ app.get('/api/debug/all-tables', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+const startDate = new Date();
+startDate.setDate(startDate.getDate() + 1); // tomorrow
+const formattedStartDate = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
+await db.execute({
+  sql: `UPDATE parking_spaces 
+        SET state = ?, plate = ?, days_to_occupy = ?, last_update = ?, start_date = ?
+        WHERE "index" = ?`,
+  args: ['taken', plate, days, currentTime, formattedStartDate, index]
+});
+
+// Also record it in the user's account
+await db.execute({
+  sql: `UPDATE accounts SET slot_index_taken = ?, location_taken = ? WHERE email = ?`,
+  args: [index, row.location_index, user.email]
+});
+
+app.post('/api/parking/cancel', async (req, res) => {
+  const user = getUserFromToken(req);
+  const { index } = req.body;
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+
+  try {
+    const result = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: 'Space not found' });
+
+    const space = result.rows[0];
+    if (space.plate !== user.liscense_plate)
+      return res.status(403).json({ error: 'You do not own this space' });
+
+    await db.execute({
+      sql: `UPDATE parking_spaces
+            SET state = 'available', plate = NULL, days_to_occupy = NULL, last_update = NULL, start_date = NULL
+            WHERE "index" = ?`,
+      args: [index]
+    });
+
+    await db.execute({
+      sql: `UPDATE accounts SET slot_index_taken = NULL, location_taken = NULL WHERE email = ?`,
+      args: [user.email]
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Cancel reservation error:', err);
+    res.status(500).json({ error: 'Failed to cancel reservation', details: err.message });
   }
 });
 
