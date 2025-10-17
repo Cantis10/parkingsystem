@@ -269,61 +269,79 @@ app.get('/api/health', (req, res) => {
 
 // API endpoint to get maps for a specific location
 app.get('/api/maps/:location_id', async (req, res) => {
-  try {
-    const locationId = req.params.location_id;
-    const result = await db.execute({
-      sql: 'SELECT * FROM maps WHERE location_index = ? ORDER BY floor ASC',
-      args: [locationId]
-    });
+    try {
+        const locationId = req.params.location_id;
+        const result = await db.execute({
+            sql: 'SELECT * FROM maps WHERE location_index = ? ORDER BY floor ASC',
+            args: [locationId]
+        });
 
-    const maps = result.rows.map(row => ({
-      id: row.id,
-      locationIndex: row.location_index,
-      floor: row.floor,
-      floorsImageIndex: row.floors_image_index
-    }));
+        const maps = result.rows.map(row => ({
+            id: row.id,
+            // 💡 FIX: Ensure floor is parsed as an integer for frontend consistency
+            locationIndex: parseInt(row.location_index, 10),
+            floor: parseInt(row.floor, 10), 
+            floorsImageIndex: row.floors_image_index
+        }));
+        
+        // Log the data type being sent for verification
+        if (maps.length > 0) {
+            console.log(`[API Maps Success] Location ${locationId}: Found ${maps.length} maps. First floor type: ${typeof maps[0].floor}, Value: ${maps[0].floor}`);
+        } else {
+            console.log(`[API Maps Success] Location ${locationId}: Found 0 maps.`);
+        }
 
-    res.json(maps);
-  } catch (err) {
-    console.error('Error fetching maps:', err);
-    res.status(500).json({ error: 'Failed to fetch maps', details: err.message });
-  }
+        res.json(maps);
+    } catch (err) {
+        console.error('Error fetching maps:', err);
+        res.status(500).json({ error: 'Failed to fetch maps', details: err.message });
+    }
 });
-
+// -----------------------------------------------------------------------------
 // API endpoint to get parking spaces for a specific location
 app.get('/api/parking/:location_id', async (req, res) => {
-  try {
-    const locationId = req.params.location_id;
-    const result = await db.execute({
-      sql: 'SELECT * FROM parking_spaces WHERE location_index = ? ORDER BY "index" ASC',
-      args: [locationId]
-    });
+    try {
+        const locationId = req.params.location_id;
+        const result = await db.execute({
+            sql: 'SELECT * FROM parking_spaces WHERE location_index = ? ORDER BY "index" ASC',
+            args: [locationId]
+        });
 
-    const spaces = result.rows.map(row => ({
-      id: row.id,
-      state: row.state,
-      feature: row.exclusive,
-      price: row.price,
-      index: row.index,
-      floor: row.floor,
-      locationIndex: row.location_index,
-      locationX: row.location_x,
-      locationY: row.location_y,
-      sizeX: row.width,
-      sizeY: row.height,
-      plate: row.plate,
-      daysToOccupy: row.days_to_occupy,
-      lastUpdate: row.last_update,
-      restrictionStart: row.restriction_start,
-      restrictionEnd: row.restriction_end,
-      restrictionFrequency: row.restriction_frequency
-    }));
-  console.log('Rows found:', result.rows.length);
-    res.json(spaces);
-  } catch (err) {
-    console.error('Error fetching parking spaces:', err);
-    res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
-  }
+        const spaces = result.rows.map(row => ({
+            id: row.id,
+            state: row.state,
+            feature: row.exclusive,
+            price: row.price,
+            index: row.index,
+            // 💡 FIX: Ensure floor is parsed as an integer for frontend consistency
+            floor: parseInt(row.floor, 10),
+            locationIndex: parseInt(row.location_index, 10),
+            // Ensure location coordinates are integers for consistent calculation
+            locationX: parseInt(row.location_x, 10),
+            locationY: parseInt(row.location_y, 10),
+            sizeX: parseInt(row.width, 10),
+            sizeY: parseInt(row.height, 10),
+            plate: row.plate,
+            daysToOccupy: row.days_to_occupy,
+            lastUpdate: row.last_update,
+            restrictionStart: row.restriction_start,
+            restrictionEnd: row.restriction_end,
+            restrictionFrequency: row.restriction_frequency
+        }));
+        
+        // Log the data type being sent for verification
+        console.log('Rows found:', result.rows.length);
+        if (spaces.length > 0) {
+            console.log(`[API Parking Success] Location ${locationId}: Found ${spaces.length} spaces. First floor type: ${typeof spaces[0].floor}, Value: ${spaces[0].floor}`);
+        } else {
+            console.log(`[API Parking Success] Location ${locationId}: Found 0 spaces.`);
+        }
+        
+        res.json(spaces);
+    } catch (err) {
+        console.error('Error fetching parking spaces:', err);
+        res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
+    }
 });
 
 
