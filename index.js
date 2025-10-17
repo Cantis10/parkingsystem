@@ -1,11 +1,12 @@
 //logged by iyad
 
-const express = require('express');
-const path = require('path');
-const session = require('express-session');
-const { createClient } = require('@libsql/client');
-const jwt = require('jsonwebtoken');
-const cookieParser = require('cookie-parser');
+import express from 'express';
+import path from 'path';
+import session from 'express-session';
+import { createClient } from '@libsql/client';
+import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
+import { fileURLToPath } from 'url';
 
 
 const app = express();
@@ -464,7 +465,42 @@ await db.execute({
   args: [index, row.location_index, user.email]
 });
 
+app.post('/api/parking/cancel', async (req, res) => {
+  const user = getUserFromToken(req);
+  const { index } = req.body;
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
 
+  try {
+    const result = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    if (result.rows.length === 0)
+      return res.status(404).json({ error: 'Space not found' });
+
+    const space = result.rows[0];
+    if (space.plate !== user.liscense_plate)
+      return res.status(403).json({ error: 'You do not own this space' });
+
+    await db.execute({
+      sql: `UPDATE parking_spaces
+            SET state = 'available', plate = NULL, days_to_occupy = NULL, last_update = NULL, start_date = NULL
+            WHERE "index" = ?`,
+      args: [index]
+    });
+
+    await db.execute({
+      sql: `UPDATE accounts SET slot_index_taken = NULL, location_taken = NULL WHERE email = ?`,
+      args: [user.email]
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Cancel reservation error:', err);
+    res.status(500).json({ error: 'Failed to cancel reservation', details: err.message });
+  }
+});
 
 
 
