@@ -1,379 +1,287 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Parking Map</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Parking Map</title>
 
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.3/themes/base/jquery-ui.css">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.3/themes/base/jquery-ui.css">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
 
-    <link rel="stylesheet" href="/styles.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-
-    <style>
-        /* ADDED: Basic CSS for the parking spaces to make them visible for testing */
-        .parking-space {
-            position: absolute;
-            background-color: rgba(0, 123, 255, 0.4); /* Blue-ish overlay for available spots */
-            border: 1px solid blue;
-            z-index: 10;
-            cursor: pointer;
-        }
-        .parking-space.state-occupied {
-            background-color: rgba(220, 53, 69, 0.6); /* Red overlay for occupied spots */
-            border: 1px solid red;
-        }
-        .map-container {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-        }
-        .map-image {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-    </style>
+  <style>
+    .parking-space {
+      position: absolute;
+      background-color: rgba(0, 123, 255, 0.4);
+      border: 1px solid blue;
+      z-index: 10;
+      cursor: pointer;
+    }
+    .parking-space.state-occupied {
+      background-color: rgba(220, 53, 69, 0.6);
+      border: 1px solid red;
+    }
+    .map-container {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+    .map-image {
+      width: 100%; height: 100%;
+      display: block;
+    }
+  </style>
 </head>
 <body>
-
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top rounded-bottom-lg">
-        <div class="container-fluid">
-            <a href="/home" class="btn btn-outline-light d-flex align-items-center me-auto" style="border: none;">
-                <i class="fas fa-caret-left fa-lg me-1"></i> Back
-            </a>
-            
-            <div class="ms-auto">
-                <a class="navbar-brand d-flex align-items-center" href="#">
-                    Urban parker <i class="fas fa-bell ms-2"></i>
-                </a>
-            </div>
-        </div>
-    </nav>
-
-    <div class="mapContainer">
-        <div class="map-main-container">
-            <div id="map-wrapper" style="position: relative; padding-top: 80px;">
-                <img class="map-sizer" src="https://placehold.co/1200x800/transparent/000?text=Parking%20Map%20Sizer" alt="Map Sizing Element">
-                <div id="map-container-1" class="map-container">
-                    <img class="map-image" src="images/map/placeHolder.png" alt="Parking Map">
-                </div>
-                <div id="map-container-2" class="map-container" style="display: none;">
-                    <img class="map-image" src="images/map/placeHolder.png" alt="Parking Map">
-                </div>
-            </div>
-        </div>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top rounded-bottom-lg">
+    <div class="container-fluid">
+      <a href="/home" class="btn btn-outline-light d-flex align-items-center me-auto" style="border:none;">
+        <i class="fas fa-caret-left fa-lg me-1"></i> Back
+      </a>
+      <div class="ms-auto">
+        <a class="navbar-brand d-flex align-items-center" href="#">
+          Urban Parker <i class="fas fa-bell ms-2"></i>
+        </a>
+      </div>
     </div>
-    
-    <div class="floor-controls">
-        <button id="floor-up" class="btn btn-primary shadow">▲</button>
-        <div id="floor-display" class="shadow-sm">--</div>
-        <button id="floor-down" class="btn btn-primary shadow">▼</button>
-    </div>
+  </nav>
 
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-    <script src="https://code.jquery.com/ui/1.13.3/jquery-ui.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
-    <script>
-        $(document).ready(function() {
-            console.log('--- Initializing Parking Map Application ---');
-            
-            const urlParams = new URLSearchParams(window.location.search);
-            const locationId = urlParams.get('location_id');
-
-            console.log(`Current Location ID: ${locationId}`);
-
-            if (!locationId) {
-                console.error('No location selected.');
-                alert('No location selected. Redirecting to home.');
-                window.location.href = '/home';
-                return;
-            }
-
-            let mapData = {
-                maps: [],
-                floors: []
-            };
-
-            let parkingSpaces = [];
-            let currentFloorIndex = 0;
-            let activeContainerSelector = '#map-container-1';
-
-            // Function to fetch maps for this location
-            function fetchMaps(callback) {
-                $.ajax({
-                    url: `/api/maps/${locationId}`,
-                    method: 'GET',
-                    dataType: 'json',
-                    success: function(data) {
-                        mapData.maps = data.map(m => `/images/map/${m.floorsImageIndex}`);
-                        mapData.floors = data.map(m => m.floor);
-                        
-                        console.log('✅ Maps fetched successfully. Floors:', mapData.floors);
-                        
-                        if (callback) callback();
-                    },
-                    error: function(xhr, status, error) {
-                        console.error('❌ Failed to fetch maps:', error, xhr.responseText);
-                        alert('Failed to load maps for this location.');
-                    }
-                });
-            }
-
-            // Function to fetch parking spaces for this location
-            function fetchParkingSpaces(callback) {
-                $.ajax({
-                    url: `/api/parking/${locationId}`,
-                    method: 'GET',
-                    dataType: 'json',
-                    success: function(data) {
-                        parkingSpaces = data;
-                        
-                        console.log(`✅ Parking spaces fetched. Rows found: ${parkingSpaces.length}`);
-                        if (parkingSpaces.length > 0) {
-                             // Log the data type of the floor column for the first row
-                             console.log(`Debug: First space floor value: ${parkingSpaces[0].floor}, Type: ${typeof parkingSpaces[0].floor}`);
-                        }
-                        
-                        if (callback) callback();
-                    },
-                    error: function(xhr, status, error) {
-                        console.error('❌ Failed to fetch parking spaces:', error, xhr.responseText);
-                    }
-                });
-            }
-
-            function loadFloor(index, containerSelector) {
-                if (mapData.floors.length === 0) {
-                    console.warn('LoadFloor: No floor data available.');
-                    return;
-                }
-
-                const mapFloorValue = mapData.floors[index];
-                
-                // CRITICAL FIX: Convert map floor value to an integer for matching
-                const targetFloor = parseInt(mapFloorValue, 10); 
-                
-                const $container = $(containerSelector);
-
-                $container.find('.map-image').attr('src', mapData.maps[index]);
-                $('#floor-display').text(`Floor: ${mapFloorValue}`);
-
-                $container.find('.parking-space').remove();
-
-                console.log(`--- Loading Floor: ${mapFloorValue} (Target Integer: ${targetFloor}) ---`);
-                
-                // Use strict equality (===) after ensuring both sides are integers
-                const spacesToLoad = parkingSpaces
-                    .filter(space => space.floor === targetFloor); 
-
-                console.log(`🎯 Found ${spacesToLoad.length} parking spaces for floor: ${targetFloor}`);
-                
-                if (spacesToLoad.length === 0) {
-                    console.warn(`LoadFloor: No spaces found for floor ${targetFloor}. Check API consistency.`);
-                }
-
-                spacesToLoad
-                    .forEach(space => {
-                        // Ensure state is lowercase for CSS class matching
-                        const spaceStateClass = String(space.state || 'unknown').toLowerCase();
-                        
-                        const spaceDiv = $('<div>', {
-                            'class': `parking-space state-${spaceStateClass}`, 
-                            'data-index': space.index, // data-index is the primary key (INTEGER)
-                            'title': `<b>Space #${space.index}</b><br>
-                                     State: ${String(space.state).charAt(0).toUpperCase() + String(space.state).slice(1).toLowerCase()}<br>
-                                     Type: ${space.feature}<br>
-                                     Price: PHP ${parseFloat(space.price).toFixed(2)}`
-                        }).css({
-                            top: `${space.locationY}%`,
-                            left: `${space.locationX}%`,
-                            width: `${space.sizeX}%`,
-                            height: `${space.sizeY}%`
-                        });
-
-                        $container.append(spaceDiv);
-                    });
-
-                $container.find('.parking-space').tooltip({
-                    content: function () { return $(this).prop('title'); }
-                });
-
-                updateButtonStates();
-            }
-
-            function updateButtonStates() {
-                $('#floor-up').prop('disabled', currentFloorIndex >= mapData.floors.length - 1);
-                $('#floor-down').prop('disabled', currentFloorIndex <= 0);
-            }
-
-            // --- EVENT LISTENERS (Floor Controls are unchanged) ---
-            $('#floor-up').on('click', function() {
-                if (currentFloorIndex >= mapData.floors.length - 1) return;
-
-                const oldContainerSelector = activeContainerSelector;
-                const newContainerSelector = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
-
-                currentFloorIndex++;
-                loadFloor(currentFloorIndex, newContainerSelector);
-
-                $(oldContainerSelector).hide();
-                $(newContainerSelector).show();
-
-                activeContainerSelector = newContainerSelector;
-            });
-
-            $('#floor-down').on('click', function() {
-                if (currentFloorIndex <= 0) return;
-
-                const oldContainerSelector = activeContainerSelector;
-                const newContainerSelector = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
-
-                currentFloorIndex--;
-                loadFloor(currentFloorIndex, newContainerSelector);
-
-                $(oldContainerSelector).hide();
-                $(newContainerSelector).show();
-
-                activeContainerSelector = newContainerSelector;
-            });
-
-            // Click handler to open reservation/inspection modal
-            $('#map-wrapper').on('click', '.parking-space', function () {
-                // Read the index as a number
-                const idx = $(this).data('index'); 
-                
-                // Find the space by strictly matching the integer index (guaranteed match)
-                const space = parkingSpaces.find(s => s.index === idx); 
-
-                if (!space) {
-                     console.error(`Modal Click: Could not find space with index ${idx} in local cache.`);
-                     return;
-                }
-
-                $('#reserveModalLabel').text(`Space #${space.index}`);
-                $('#reserve-space-info').html(`
-                    <p><strong>State:</strong> ${space.state}</p>
-                    <p><strong>Type:</strong> ${space.feature}</p>
-                    <p><strong>Price:</strong> PHP ${parseFloat(space.price).toFixed(2)}</p>
-                `);
-
-                $('#reserve-plate').val('');
-                $('#reserve-days').val('');
-                $('#reserve-index').val(space.index);
-
-                const stateVal = String(space.state || '').toLowerCase();
-                const isAvailable = (stateVal === 'available');
-
-                if (isAvailable) {
-                    $('#reserve-form-row').show();
-                    $('#reserve-not-available').hide();
-                    $('#reserve-submit').prop('disabled', false);
-                } else {
-                    $('#reserve-form-row').hide();
-                    $('#reserve-not-available').show().text(`This space is currently ${stateVal}.`);
-                    $('#reserve-submit').prop('disabled', true);
-                }
-
-                $('#reserveModal').modal('show');
-            });
-
-            // Submit reservation is unchanged (it seemed correct)
-            $('#reserve-submit').on('click', function (e) {
-                e.preventDefault();
-
-                const index = $('#reserve-index').val();
-                const plate = $('#reserve-plate').val().trim();
-                const days = parseInt($('#reserve-days').val(), 10);
-
-                if (!plate || !days || days <= 0) {
-                    alert('Please enter a valid plate and number of days.');
-                    return;
-                }
-
-                $.ajax({
-                    url: '/api/parking/reserve',
-                    method: 'POST',
-                    contentType: 'application/json',
-                    data: JSON.stringify({ index: index, plate: plate, days: days }),
-                    success: function (updatedRow) {
-                        console.log('✅ Reservation successful. Refreshing data.');
-                        fetchParkingSpaces(function() {
-                            loadFloor(currentFloorIndex, activeContainerSelector);
-                            $('#reserveModal').modal('hide');
-                        });
-                    },
-                    error: function (xhr) {
-                        let msg = 'Failed to reserve space';
-                        try {
-                            const json = xhr.responseJSON || (xhr.responseText && JSON.parse(xhr.responseText));
-                            if (json && json.error) msg = json.error;
-                        } catch (e) {
-                            msg = xhr.statusText || msg;
-                        }
-                        console.error('❌ Reservation failed:', msg, xhr.status);
-                        alert(msg);
-                    }
-                });
-            });
-
-            // Initialize: First fetch maps, then parking spaces, then load first floor
-            fetchMaps(function() {
-                fetchParkingSpaces(function() {
-                    if (mapData.floors.length > 0) {
-                        console.log('🎉 Initialization complete. Loading first floor.');
-                        loadFloor(currentFloorIndex, activeContainerSelector);
-
-                        // Refresh every 5 seconds
-                        setInterval(function() {
-                            fetchParkingSpaces(function() {
-                                loadFloor(currentFloorIndex, activeContainerSelector);
-                            });
-                        }, 5000);
-                    } else {
-                        alert('No maps available for this location.');
-                    }
-                });
-            });
-        });
-    </script>
-
-    <div class="modal fade" id="reserveModal" tabindex="-1" aria-labelledby="reserveModalLabel" aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 id="reserveModalLabel" class="modal-title">Reserve Space</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div id="reserve-space-info"></div>
-
-            <div id="reserve-not-available" class="alert alert-warning" style="display:none;"></div>
-
-            <div id="reserve-form-row">
-              <div class="mb-2">
-                <label for="reserve-plate" class="form-label">Plate</label>
-                <input id="reserve-plate" class="form-control" type="text" placeholder="Enter license plate">
-              </div>
-              <div class="mb-2">
-                <label for="reserve-days" class="form-label">Days to park</label>
-                <input id="reserve-days" class="form-control" type="number" min="1" value="1">
-              </div>
-            </div>
-
-            <input type="hidden" id="reserve-index" value="">
-          </div>
-          <div class="modal-footer">
-            <button type="button" id="reserve-submit" class="btn btn-primary">Reserve</button>
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-          </div>
+  <div class="mapContainer">
+    <div class="map-main-container">
+      <div id="map-wrapper" style="position:relative; padding-top:80px;">
+        <img class="map-sizer" src="https://placehold.co/1200x800/transparent/000?text=Parking%20Map%20Sizer" alt="Map Sizing Element">
+        <div id="map-container-1" class="map-container">
+          <img class="map-image" src="images/map/placeHolder.png" alt="Parking Map">
+        </div>
+        <div id="map-container-2" class="map-container" style="display:none;">
+          <img class="map-image" src="images/map/placeHolder.png" alt="Parking Map">
         </div>
       </div>
     </div>
+  </div>
+  
+  <div class="floor-controls">
+    <button id="floor-up" class="btn btn-primary shadow">▲</button>
+    <div id="floor-display" class="shadow-sm">--</div>
+    <button id="floor-down" class="btn btn-primary shadow">▼</button>
+  </div>
 
+  <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+  <script src="https://code.jquery.com/ui/1.13.3/jquery-ui.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    $(document).ready(function () {
+      console.log('--- Initializing Parking Map Application ---');
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const locationId = urlParams.get('location_id');
+      if (!locationId) {
+        alert('No location selected. Redirecting to home.');
+        window.location.href = '/home';
+        return;
+      }
+
+      let user = null;
+      let mapData = { maps: [], floors: [] };
+      let parkingSpaces = [];
+      let currentFloorIndex = 0;
+      let activeContainerSelector = '#map-container-1';
+
+      // 🧠 Fetch logged-in user info
+      function fetchUser(callback) {
+        $.getJSON('/api/auth/user', function (data) {
+          user = data;
+          console.log('✅ Logged-in user:', user);
+          if (user && user.liscense_plate) {
+            $('#reserve-plate').val(user.liscense_plate).prop('readonly', true);
+          }
+          if (callback) callback();
+        }).fail(function (xhr) {
+          console.error('❌ Failed to fetch user:', xhr.responseText);
+          alert('Not logged in. Redirecting to login page.');
+          window.location.href = '/login';
+        });
+      }
+
+      function fetchMaps(callback) {
+        $.getJSON(`/api/maps/${locationId}`, function (data) {
+          mapData.maps = data.map(m => `/images/map/${m.floorsImageIndex}`);
+          mapData.floors = data.map(m => m.floor);
+          if (callback) callback();
+        }).fail(function (xhr) {
+          alert('Failed to load maps for this location.');
+        });
+      }
+
+      function fetchParkingSpaces(callback) {
+        $.getJSON(`/api/parking/${locationId}`, function (data) {
+          parkingSpaces = data;
+          if (callback) callback();
+        }).fail(function (xhr) {
+          console.error('❌ Failed to fetch parking spaces:', xhr.responseText);
+        });
+      }
+
+      function loadFloor(index, containerSelector) {
+        if (!mapData.floors.length) return;
+        const floorValue = parseInt(mapData.floors[index], 10);
+        const $container = $(containerSelector);
+        $container.find('.map-image').attr('src', mapData.maps[index]);
+        $('#floor-display').text(`Floor: ${mapData.floors[index]}`);
+        $container.find('.parking-space').remove();
+
+        const spacesToLoad = parkingSpaces.filter(s => s.floor === floorValue);
+        spacesToLoad.forEach(space => {
+          const stateClass = String(space.state).toLowerCase();
+          const spaceDiv = $('<div>', {
+            class: `parking-space state-${stateClass}`,
+            'data-index': space.index,
+            title: `Space #${space.index}<br>Type: ${space.feature}<br>Price: ${space.price}`
+          }).css({
+            top: `${space.locationY}%`,
+            left: `${space.locationX}%`,
+            width: `${space.sizeX}%`,
+            height: `${space.sizeY}%`
+          });
+          $container.append(spaceDiv);
+        });
+
+        updateButtonStates();
+      }
+
+      function updateButtonStates() {
+        $('#floor-up').prop('disabled', currentFloorIndex >= mapData.floors.length - 1);
+        $('#floor-down').prop('disabled', currentFloorIndex <= 0);
+      }
+
+      $('#floor-up').click(() => {
+        if (currentFloorIndex < mapData.floors.length - 1) {
+          const oldSel = activeContainerSelector;
+          const newSel = (oldSel === '#map-container-1') ? '#map-container-2' : '#map-container-1';
+          currentFloorIndex++;
+          loadFloor(currentFloorIndex, newSel);
+          $(oldSel).hide(); $(newSel).show();
+          activeContainerSelector = newSel;
+        }
+      });
+
+      $('#floor-down').click(() => {
+        if (currentFloorIndex > 0) {
+          const oldSel = activeContainerSelector;
+          const newSel = (oldSel === '#map-container-1') ? '#map-container-2' : '#map-container-1';
+          currentFloorIndex--;
+          loadFloor(currentFloorIndex, newSel);
+          $(oldSel).hide(); $(newSel).show();
+          activeContainerSelector = newSel;
+        }
+      });
+
+      $('#map-wrapper').on('click', '.parking-space', function () {
+        const idx = $(this).data('index');
+        const space = parkingSpaces.find(s => s.index === idx);
+        if (!space) return;
+
+        $('#reserveModalLabel').text(`Space #${space.index}`);
+        $('#reserve-space-info').html(`
+          <p><strong>State:</strong> ${space.state}</p>
+          <p><strong>Type:</strong> ${space.feature}</p>
+          <p><strong>Price:</strong> PHP ${parseFloat(space.price).toFixed(2)}</p>
+        `);
+
+        $('#reserve-index').val(space.index);
+
+        const available = String(space.state).toLowerCase() === 'available';
+        if (available) {
+          $('#reserve-form-row').show();
+          $('#reserve-not-available').hide();
+          $('#reserve-submit').prop('disabled', false);
+          if (user?.liscense_plate) $('#reserve-plate').val(user.liscense_plate);
+        } else {
+          $('#reserve-form-row').hide();
+          $('#reserve-not-available').show().text(`This space is ${space.state}.`);
+          $('#reserve-submit').prop('disabled', true);
+        }
+
+        $('#reserveModal').modal('show');
+      });
+
+      $('#reserve-submit').click(function (e) {
+        e.preventDefault();
+        const index = $('#reserve-index').val();
+        const plate = user?.liscense_plate;
+        const days = parseInt($('#reserve-days').val(), 10);
+
+        if (!plate || !days || days <= 0) {
+          alert('Invalid user license plate or days.');
+          return;
+        }
+
+        $.ajax({
+          url: '/api/parking/reserve',
+          method: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ index, plate, days }),
+          success: function () {
+            fetchParkingSpaces(() => loadFloor(currentFloorIndex, activeContainerSelector));
+            $('#reserveModal').modal('hide');
+          },
+          error: function (xhr) {
+            const msg = xhr.responseJSON?.error || xhr.statusText;
+            alert(msg);
+          }
+        });
+      });
+
+      // Initialize in correct order
+      fetchUser(function () {
+        fetchMaps(function () {
+          fetchParkingSpaces(function () {
+            if (mapData.floors.length) {
+              loadFloor(currentFloorIndex, activeContainerSelector);
+              setInterval(() => {
+                fetchParkingSpaces(() => loadFloor(currentFloorIndex, activeContainerSelector));
+              }, 5000);
+            } else {
+              alert('No maps available for this location.');
+            }
+          });
+        });
+      });
+    });
+  </script>
+
+  <div class="modal fade" id="reserveModal" tabindex="-1" aria-labelledby="reserveModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 id="reserveModalLabel" class="modal-title">Reserve Space</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div id="reserve-space-info"></div>
+          <div id="reserve-not-available" class="alert alert-warning" style="display:none;"></div>
+
+          <div id="reserve-form-row">
+            <div class="mb-2">
+              <label for="reserve-plate" class="form-label">License Plate</label>
+              <input id="reserve-plate" class="form-control" type="text" readonly>
+            </div>
+            <div class="mb-2">
+              <label for="reserve-days" class="form-label">Days to park</label>
+              <input id="reserve-days" class="form-control" type="number" min="1" value="1">
+            </div>
+          </div>
+
+          <input type="hidden" id="reserve-index">
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="reserve-submit" class="btn btn-primary">Reserve</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
 </html>
