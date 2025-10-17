@@ -134,44 +134,56 @@
 
   const spacesToLoad = parkingSpaces.filter(s => s.floor === floorValue);
   spacesToLoad.forEach(space => {
-    // Determine background color based on state
-    let backgroundColor;
-    switch (String(space.state).toLowerCase()) {
-      case 'taken':
-        backgroundColor = '#808080'; // gray
-        break;
-      case 'available':
-        backgroundColor = '#d3d3d3'; // light gray
-        break;
-      case 'unavailable':
-      default:
-        backgroundColor = '#000000'; // black
-        break;
-    }
+  const state = String(space.state).toLowerCase();
+  const exclusive = String(space.feature || '').toLowerCase();
 
-    // Determine border color based on exclusivity
-    let borderColor = 'blue'; // default
-    const exclusive = String(space.feature || '').toLowerCase();
-    if (exclusive === 'employee') borderColor = 'red';
-    else if (exclusive === 'pwd') borderColor = 'lightblue';
+  // Base background colors based on state
+  let backgroundColor;
+  switch (state) {
+    case 'taken':
+      backgroundColor = 'rgba(128,128,128,0.8)'; // gray
+      break;
+    case 'available':
+      backgroundColor = 'rgba(211,211,211,0.8)'; // light gray
+      break;
+    case 'unavailable':
+      backgroundColor = 'rgba(0,0,0,0.8)'; // black
+      break;
+    default:
+      backgroundColor = 'rgba(211,211,211,0.5)'; // fallback
+  }
 
-    const spaceDiv = $('<div>', {
-      class: 'parking-space',
-      'data-index': space.index,
-      title: `Space #${space.index}
-Type: ${space.feature}
-Price: PHP ${space.price}`
-    }).css({
-      top: `${space.locationY}%`,
-      left: `${space.locationX}%`,
-      width: `${space.sizeX}%`,
-      height: `${space.sizeY}%`,
-      backgroundColor,
-      border: `2px solid ${borderColor}`
-    });
+  // Border color logic
+  let borderColor = 'transparent';
+  let borderWidth = '0px';
+  if (exclusive === 'employee') {
+    borderColor = 'red';
+    borderWidth = '3px';
+  } else if (exclusive === 'pwd') {
+    borderColor = 'lightblue';
+    borderWidth = '3px';
+  }
 
-    $container.append(spaceDiv);
+  const spaceDiv = $('<div>', {
+    class: 'parking-space',
+    'data-index': space.index,
+    title: `Space #${space.index}\nType: ${space.feature}\nPrice: ${space.price}`
+  }).css({
+    position: 'absolute',
+    backgroundColor,
+    border: `${borderWidth} solid ${borderColor}`,
+    borderRadius: '3px',
+    top: `${space.locationY}%`,
+    left: `${space.locationX}%`,
+    width: `${space.sizeX}%`,
+    height: `${space.sizeY}%`,
+    cursor: 'pointer',
+    zIndex: 10
   });
+
+  $container.append(spaceDiv);
+});
+
 
   updateButtonStates();
 }
