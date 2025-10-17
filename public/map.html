@@ -125,31 +125,57 @@
       }
 
       function loadFloor(index, containerSelector) {
-        if (!mapData.floors.length) return;
-        const floorValue = parseInt(mapData.floors[index], 10);
-        const $container = $(containerSelector);
-        $container.find('.map-image').attr('src', mapData.maps[index]);
-        $('#floor-display').text(`Floor: ${mapData.floors[index]}`);
-        $container.find('.parking-space').remove();
+  if (!mapData.floors.length) return;
+  const floorValue = parseInt(mapData.floors[index], 10);
+  const $container = $(containerSelector);
+  $container.find('.map-image').attr('src', mapData.maps[index]);
+  $('#floor-display').text(`Floor: ${mapData.floors[index]}`);
+  $container.find('.parking-space').remove();
 
-        const spacesToLoad = parkingSpaces.filter(s => s.floor === floorValue);
-        spacesToLoad.forEach(space => {
-          const stateClass = String(space.state).toLowerCase();
-          const spaceDiv = $('<div>', {
-            class: `parking-space state-${stateClass}`,
-            'data-index': space.index,
-            title: `Space #${space.index}<br>Type: ${space.feature}<br>Price: ${space.price}`
-          }).css({
-            top: `${space.locationY}%`,
-            left: `${space.locationX}%`,
-            width: `${space.sizeX}%`,
-            height: `${space.sizeY}%`
-          });
-          $container.append(spaceDiv);
-        });
+  const spacesToLoad = parkingSpaces.filter(s => s.floor === floorValue);
+  spacesToLoad.forEach(space => {
+    // Determine background color based on state
+    let backgroundColor;
+    switch (String(space.state).toLowerCase()) {
+      case 'taken':
+        backgroundColor = '#808080'; // gray
+        break;
+      case 'available':
+        backgroundColor = '#d3d3d3'; // light gray
+        break;
+      case 'unavailable':
+      default:
+        backgroundColor = '#000000'; // black
+        break;
+    }
 
-        updateButtonStates();
-      }
+    // Determine border color based on exclusivity
+    let borderColor = 'blue'; // default
+    const exclusive = String(space.feature || '').toLowerCase();
+    if (exclusive === 'employee') borderColor = 'red';
+    else if (exclusive === 'pwd') borderColor = 'lightblue';
+
+    const spaceDiv = $('<div>', {
+      class: 'parking-space',
+      'data-index': space.index,
+      title: `Space #${space.index}
+Type: ${space.feature}
+Price: PHP ${space.price}`
+    }).css({
+      top: `${space.locationY}%`,
+      left: `${space.locationX}%`,
+      width: `${space.sizeX}%`,
+      height: `${space.sizeY}%`,
+      backgroundColor,
+      border: `2px solid ${borderColor}`
+    });
+
+    $container.append(spaceDiv);
+  });
+
+  updateButtonStates();
+}
+
 
       function updateButtonStates() {
         $('#floor-up').prop('disabled', currentFloorIndex >= mapData.floors.length - 1);
