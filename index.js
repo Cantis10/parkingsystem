@@ -344,9 +344,10 @@ app.get('/api/locations', async (req, res) => {
     const locations = result.rows.map(row => ({
       id: row.id,
       imageIndex: row.image_index,
-      averagePrice: row.avarage_price,
+      currentAvailable: row.current_available,
       addressLocation: row.adress_location,
-      availableSpots: row.current_available
+      averagePrice: row.avarage_price,
+      redirect: '/map'
     }));
 
     res.json(locations);

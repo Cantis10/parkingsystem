@@ -122,19 +122,20 @@
 
             // Function to generate a single card from data
             function createCard(data) {
-                const numBgColor = data.availableSpots > 0 ? 'green' : 'red';
+                const numBgColor = data.currentAvailable > 0 ? 'green' : 'red';
                 const imagePath = `/images/${data.imageIndex}`;
+                const cardTitle = data.addressLocation || 'Parking Location';
 
                 // If available, wrap with <a>
                 const cardContent = `
-        <div class="card h-100 ${data.availableSpots > 0 ? 'card-hover' : 'disabled'}">
-            <img src="${imagePath}" class="card-img-top" alt="${data.name}">
+        <div class="card h-100 ${data.currentAvailable > 0 ? 'card-hover' : 'disabled'}">
+            <img src="${imagePath}" class="card-img-top" alt="${cardTitle}">
 
             <div class="card-body">
-                <h5 class="card-title text-center my-3">${data.name}</h5>
+                <h5 class="card-title text-center my-3">${cardTitle}</h5>
                 <div class="row">
                     <div class="col text-center py-2" style="background-color: ${numBgColor}; color: white;">
-                        ${data.availableSpots}
+                        ${data.currentAvailable}
                     </div>
                     <div class="col text-center text-secondary py-2">
                         ${data.averagePrice}
@@ -150,7 +151,7 @@
         </div>
     `;
 
-                if (data.availableSpots > 0) {
+                if (data.currentAvailable > 0) {
                     // clickable
                     return `
             <div class="col-12 col-md-6 col-lg-4 mb-4">
@@ -228,8 +229,8 @@
                 const includeZeroSpots = $('#filter-include-zero-spots').is(':checked');
 
                 const filteredCards = cardData.filter(card => {
-                    const nameMatch = card.name.toLowerCase().includes(nameFilter);
-                    const spotsMatch = includeZeroSpots ? (card.availableSpots >= 0) : (card.availableSpots > 0);
+                    const nameMatch = card.addressLocation.toLowerCase().includes(nameFilter);
+                    const spotsMatch = includeZeroSpots ? (card.currentAvailable >= 0) : (card.currentAvailable > 0);
 
                     return nameMatch && spotsMatch;
                 });
