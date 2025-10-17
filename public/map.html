@@ -144,9 +144,9 @@
                 const spaceDiv = $('<div>', {
                     'class': `parking-space state-${space.state}`,
                     'data-index': space.index,
-                    'title': `<b>Space #${space.index}</b><br>
-                              State: ${space.state.charAt(0).toUpperCase() + space.state.slice(1)}<br>
-                              Type: ${space.feature}<br>
+                    'title': `
+                              State: ${space.state.charAt(0).toUpperCase() + space.state.slice(1)}
+                              Type: ${space.feature}
                               Price: PHP ${parseFloat(space.price).toFixed(2)}`
                 }).css({
                     top: `${space.locationY}%`,
