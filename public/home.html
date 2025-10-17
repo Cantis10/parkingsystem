@@ -152,10 +152,10 @@
     `;
 
                 if (data.currentAvailable > 0) {
-                    // clickable
+                    // clickable - pass location_id as query parameter
                     return `
             <div class="col-12 col-md-6 col-lg-4 mb-4">
-                <a href="${data.redirect}" class="text-decoration-none text-dark">
+                <a href="/map?location_id=${data.id}" class="text-decoration-none text-dark">
                     ${cardContent}
                 </a>
             </div>

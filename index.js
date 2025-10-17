@@ -80,101 +80,30 @@ function requireAuth(req, res, next) {
 
 
 // API endpoint to get all parking spaces
-app.get('/api/parking', async (req, res) => {
+// API endpoint to get all locations
+app.get('/api/locations', async (req, res) => {
   try {
-    const result = await db.execute('SELECT * FROM parking_spaces ORDER BY index_number');
+    const result = await db.execute('SELECT * FROM locations');
 
-    const spaces = result.rows.map(row => ({
+    const locations = result.rows.map(row => ({
       id: row.id,
-      state: row.state,
-      feature: row.exclusive,
-      price: row.price,
-      index: row.index_number,
-      floor: row.floor,
-      locationX: row.location_x,
-      locationY: row.location_y,
-      sizeX: row.width,
-      sizeY: row.height,
-      plate: row.plate,
-      daysToOccupy: row.days_to_occupy,
-      lastUpdate: row.last_update
+      imageIndex: row.image_index,
+      currentAvailable: row.current_available,
+      addressLocation: row.adress_location,
+      averagePrice: row.avarage_price,
+      redirect: '/map'
     }));
 
-    res.json(spaces);
+    res.json(locations);
   } catch (err) {
-    console.error('Error fetching parking spaces:', err);
-    res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
+    console.error('Error fetching locations:', err);
+    res.status(500).json({ error: 'Failed to fetch locations', details: err.message });
   }
 });
 
-// API endpoint to reserve a parking space
-app.post('/api/parking/reserve', async (req, res) => {
-  const { index, plate, days } = req.body;
+// API endpoint to get parking spaces for a specific location
 
-  console.log('Reservation request:', { index, plate, days });
 
-  if (!index || !plate || !days || days <= 0) {
-    return res.status(400).json({ error: 'Invalid reservation data' });
-  }
-
-  const currentTime = new Date().toISOString();
-
-  try {
-    // First check if the space is available
-    const checkResult = await db.execute({
-      sql: 'SELECT * FROM parking_spaces WHERE index_number = ?',
-      args: [index]
-    });
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Parking space not found' });
-    }
-
-    const row = checkResult.rows[0];
-    console.log('Found space:', row);
-
-    if (row.state !== 'available' && row.exclusive !== 'available') {
-      return res.status(400).json({ error: 'Parking space is not available' });
-    }
-
-    // Update the parking space
-    await db.execute({
-      sql: `UPDATE parking_spaces 
-            SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
-            WHERE index_number = ?`,
-      args: ['taken', plate, days, currentTime, index]
-    });
-
-    // Fetch the updated row
-    const updatedResult = await db.execute({
-      sql: 'SELECT * FROM parking_spaces WHERE index_number = ?',
-      args: [index]
-    });
-
-    const updatedRow = updatedResult.rows[0];
-    const updatedSpace = {
-      id: updatedRow.id,
-      state: updatedRow.state,
-      feature: updatedRow.exclusive,
-      price: updatedRow.price,
-      index: updatedRow.index_number,
-      floor: updatedRow.floor,
-      locationX: updatedRow.location_x,
-      locationY: updatedRow.location_y,
-      sizeX: updatedRow.width,
-      sizeY: updatedRow.height,
-      plate: updatedRow.plate,
-      daysToOccupy: updatedRow.days_to_occupy,
-      lastUpdate: updatedRow.last_update
-    };
-
-    console.log('Reservation successful:', updatedSpace);
-    res.json(updatedSpace);
-  } catch (err) {
-    console.error('Error during reservation:', err);
-    res.status(500).json({ error: 'Failed to reserve parking space', details: err.message });
-  }
-});
 
 // Login endpoint
 app.post('/api/auth/login', async (req, res) => {
@@ -337,23 +266,136 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-app.get('/api/locations', async (req, res) => {
-  try {
-    const result = await db.execute('SELECT * FROM locations');
 
-    const locations = result.rows.map(row => ({
+// API endpoint to get maps for a specific location
+app.get('/api/maps/:location_id', async (req, res) => {
+  try {
+    const locationId = req.params.location_id;
+    const result = await db.execute({
+      sql: 'SELECT * FROM maps WHERE location_index = ? ORDER BY floor ASC',
+      args: [locationId]
+    });
+
+    const maps = result.rows.map(row => ({
       id: row.id,
-      imageIndex: row.image_index,
-      currentAvailable: row.current_available,
-      addressLocation: row.adress_location,
-      averagePrice: row.avarage_price,
-      redirect: '/map'
+      locationIndex: row.location_index,
+      floor: row.floor,
+      floorsImageIndex: row.floors_image_index
     }));
 
-    res.json(locations);
+    res.json(maps);
   } catch (err) {
-    console.error('Error fetching locations:', err);
-    res.status(500).json({ error: 'Failed to fetch locations', details: err.message });
+    console.error('Error fetching maps:', err);
+    res.status(500).json({ error: 'Failed to fetch maps', details: err.message });
+  }
+});
+
+// API endpoint to get parking spaces for a specific location
+app.get('/api/parking/:location_id', async (req, res) => {
+  try {
+    const locationId = req.params.location_id;
+    const result = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE location_index = ? ORDER BY index ASC',
+      args: [locationId]
+    });
+
+    const spaces = result.rows.map(row => ({
+      id: row.id,
+      state: row.state,
+      feature: row.exclusive,
+      price: row.price,
+      index: row.index,
+      floor: row.floor,
+      locationIndex: row.location_index,
+      locationX: row.location_x,
+      locationY: row.location_y,
+      sizeX: row.width,
+      sizeY: row.height,
+      plate: row.plate,
+      daysToOccupy: row.days_to_occupy,
+      lastUpdate: row.last_update,
+      restrictionStart: row.restriction_start,
+      restrictionEnd: row.restriction_end,
+      restrictionFrequency: row.restriction_frequency
+    }));
+
+    res.json(spaces);
+  } catch (err) {
+    console.error('Error fetching parking spaces:', err);
+    res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
+  }
+});
+
+// API endpoint to reserve a parking space (updated to use 'index' column)
+app.post('/api/parking/reserve', async (req, res) => {
+  const { index, plate, days } = req.body;
+
+  console.log('Reservation request:', { index, plate, days });
+
+  if (!index || !plate || !days || days <= 0) {
+    return res.status(400).json({ error: 'Invalid reservation data' });
+  }
+
+  const currentTime = new Date().toISOString();
+
+  try {
+    // First check if the space is available
+    const checkResult = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE index = ?',
+      args: [index]
+    });
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Parking space not found' });
+    }
+
+    const row = checkResult.rows[0];
+    console.log('Found space:', row);
+
+    if (row.state !== 'available' && row.exclusive !== 'available') {
+      return res.status(400).json({ error: 'Parking space is not available' });
+    }
+
+    // Update the parking space
+    await db.execute({
+      sql: `UPDATE parking_spaces 
+            SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
+            WHERE index = ?`,
+      args: ['taken', plate, days, currentTime, index]
+    });
+
+    // Fetch the updated row
+    const updatedResult = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE index = ?',
+      args: [index]
+    });
+
+    const updatedRow = updatedResult.rows[0];
+    const updatedSpace = {
+      id: updatedRow.id,
+      state: updatedRow.state,
+      feature: updatedRow.exclusive,
+      price: updatedRow.price,
+      index: updatedRow.index,
+      floor: updatedRow.floor,
+      locationIndex: updatedRow.location_index,
+      locationX: updatedRow.location_x,
+      locationY: updatedRow.location_y,
+      sizeX: updatedRow.width,
+      sizeY: updatedRow.height,
+      plate: updatedRow.plate,
+      daysToOccupy: updatedRow.days_to_occupy,
+      lastUpdate: updatedRow.last_update,
+      restrictionStart: updatedRow.restriction_start,
+      restrictionEnd: updatedRow.restriction_end,
+      restrictionFrequency: updatedRow.restriction_frequency
+    };
+
+    console.log('Reservation successful:', updatedSpace);
+    res.json(updatedSpace);
+  } catch (err) {
+    console.error('Error during reservation:', err);
+    res.status(500).json({ error: 'Failed to reserve parking space', details: err.message });
   }
 });
 // Export for Vercel
