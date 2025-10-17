@@ -135,7 +135,7 @@ app.post('/api/auth/login', async (req, res) => {
     const user = result.rows[0];
 
     const token = jwt.sign(
-      { username: user.username, email: user.email, role: user.role, license_plate: user.license_plate },
+      { username: user.username, email: user.email, role: user.role, liscense_plate: user.liscense_plate },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -179,9 +179,9 @@ app.post('/api/auth/logout', (req, res) => {
 
 // Register endpoint
 app.post('/api/auth/register', async (req, res) => {
-  const { username, email, password, license_plate } = req.body; // ✅ added license_plate
+  const { username, email, password, liscense_plate } = req.body; // ✅ added liscense_plate
 
-  if (!username || !email || !password || !license_plate) { // ✅ updated validation
+  if (!username || !email || !password || !liscense_plate) { // ✅ updated validation
     return res.status(400).json({ error: 'All fields required' });
   }
 
@@ -196,11 +196,11 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     await db.execute({
-      sql: 'INSERT INTO accounts (username, email, password, role, license_plate) VALUES (?, ?, ?, ?, ?)',
-      args: [username, email, password, 'user', license_plate]
+      sql: 'INSERT INTO accounts (username, email, password, role, liscense_plate) VALUES (?, ?, ?, ?, ?)',
+      args: [username, email, password, 'user', liscense_plate]
     });
 
-    res.json({ success: true, username, email, license_plate });
+    res.json({ success: true, username, email, liscense_plate });
   } catch (err) {
     console.error('Registration error:', err);
     res.status(500).json({ error: 'Failed to register user', details: err.message });
@@ -236,7 +236,7 @@ app.get('/api/auth/user', async (req, res) => {
 
   try {
     const result = await db.execute({
-      sql: 'SELECT email, username, license_plate FROM accounts WHERE email = ?',
+      sql: 'SELECT email, username, liscense_plate FROM accounts WHERE email = ?',
       args: [req.session.user.email]
     });
     if (result.rows.length === 0) {
