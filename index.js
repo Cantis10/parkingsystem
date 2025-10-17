@@ -79,8 +79,6 @@ function requireAuth(req, res, next) {
 }
 
 
-// API endpoint to get all parking spaces
-// API endpoint to get all locations
 app.get('/api/locations', async (req, res) => {
   try {
     const result = await db.execute('SELECT * FROM locations');
@@ -100,6 +98,7 @@ app.get('/api/locations', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch locations', details: err.message });
   }
 });
+
 
 // API endpoint to get parking spaces for a specific location
 
@@ -295,7 +294,7 @@ app.get('/api/parking/:location_id', async (req, res) => {
   try {
     const locationId = req.params.location_id;
     const result = await db.execute({
-      sql: 'SELECT * FROM parking_spaces WHERE location_index = ? ORDER BY index ASC',
+      sql: 'SELECT * FROM parking_spaces WHERE location_index = ? ORDER BY "index" ASC',
       args: [locationId]
     });
 
@@ -326,6 +325,7 @@ app.get('/api/parking/:location_id', async (req, res) => {
   }
 });
 
+
 // API endpoint to reserve a parking space (updated to use 'index' column)
 app.post('/api/parking/reserve', async (req, res) => {
   const { index, plate, days } = req.body;
@@ -341,7 +341,7 @@ app.post('/api/parking/reserve', async (req, res) => {
   try {
     // First check if the space is available
     const checkResult = await db.execute({
-      sql: 'SELECT * FROM parking_spaces WHERE index = ?',
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
       args: [index]
     });
 
@@ -360,13 +360,13 @@ app.post('/api/parking/reserve', async (req, res) => {
     await db.execute({
       sql: `UPDATE parking_spaces 
             SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
-            WHERE index = ?`,
+            WHERE "index" = ?`,
       args: ['taken', plate, days, currentTime, index]
     });
 
     // Fetch the updated row
     const updatedResult = await db.execute({
-      sql: 'SELECT * FROM parking_spaces WHERE index = ?',
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
       args: [index]
     });
 
@@ -398,6 +398,7 @@ app.post('/api/parking/reserve', async (req, res) => {
     res.status(500).json({ error: 'Failed to reserve parking space', details: err.message });
   }
 });
+
 // Export for Vercel
 module.exports = app;
 
