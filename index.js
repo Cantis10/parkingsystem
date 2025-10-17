@@ -400,6 +400,33 @@ app.post('/api/parking/reserve', async (req, res) => {
   }
 });
 
+app.get('/api/debug/all-tables', async (req, res) => {
+  try {
+    const locations = await db.execute('SELECT * FROM locations');
+    const maps = await db.execute('SELECT * FROM maps');
+    const parking = await db.execute('SELECT * FROM parking_spaces');
+    
+    res.json({
+      locations: {
+        count: locations.rows.length,
+        data: locations.rows
+      },
+      maps: {
+        count: maps.rows.length,
+        data: maps.rows
+      },
+      parking_spaces: {
+        count: parking.rows.length,
+        data: parking.rows
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
 // Export for Vercel
 module.exports = app;
 
