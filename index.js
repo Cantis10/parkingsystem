@@ -134,13 +134,14 @@ app.post('/api/auth/login', async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
-        liscense_plate: user.liscense_plate
+        liscense_plate: user.liscense_plate,
+        slot_index_taken: user.slot_index_taken,
+        location_taken: user.location_taken
       },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
-    // Set cookie
     res.cookie('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -154,7 +155,6 @@ app.post('/api/auth/login', async (req, res) => {
     res.status(500).json({ error: 'Login failed', details: err.message });
   }
 });
-
 
 
 // Logout endpoint
@@ -179,8 +179,9 @@ app.post('/api/auth/register', async (req, res) => {
     if (existing.rows.length > 0)
       return res.status(409).json({ error: 'Email or username already exists' });
 
+    // Insert with NULL slot_index_taken and location_taken initially
     await db.execute({
-      sql: 'INSERT INTO accounts (username, email, password, role, liscense_plate) VALUES (?, ?, ?, ?, ?)',
+      sql: 'INSERT INTO accounts (username, email, password, role, liscense_plate, slot_index_taken, location_taken) VALUES (?, ?, ?, ?, ?, NULL, NULL)',
       args: [username, email, password, 'user', liscense_plate]
     });
 
@@ -190,7 +191,6 @@ app.post('/api/auth/register', async (req, res) => {
     res.status(500).json({ error: 'Registration failed', details: err.message });
   }
 });
-
 
 // Session check endpoint
 app.get('/api/auth/check', (req, res) => {
@@ -334,6 +334,54 @@ app.get('/api/parking/:location_id', async (req, res) => {
   }
 });
 
+app.post('/api/parking/release', async (req, res) => {
+  const { index } = req.body;
+
+  const user = getUserFromToken(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  try {
+    const checkResult = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Parking space not found' });
+    }
+
+    const row = checkResult.rows[0];
+
+    // Check if this space belongs to the user
+    if (row.plate !== user.liscense_plate) {
+      return res.status(403).json({ error: 'You can only release your own parking space' });
+    }
+
+    // Release the space
+    await db.execute({
+      sql: `UPDATE parking_spaces 
+            SET state = ?, plate = NULL, days_to_occupy = 0, last_update = ? 
+            WHERE "index" = ?`,
+      args: ['available', new Date().toISOString(), index]
+    });
+
+    // Clear user's slot info
+    await db.execute({
+      sql: `UPDATE accounts 
+            SET slot_index_taken = NULL, location_taken = NULL 
+            WHERE email = ?`,
+      args: [user.email]
+    });
+
+    res.json({ success: true, message: 'Parking space released' });
+  } catch (err) {
+    console.error('Error releasing parking space:', err);
+    res.status(500).json({ error: 'Failed to release parking space', details: err.message });
+  }
+});
+
 // API endpoint to reserve a parking space (updated to use 'index' column)
 app.post('/api/parking/reserve', async (req, res) => {
   const { index, plate, days } = req.body;
@@ -364,7 +412,7 @@ app.post('/api/parking/reserve', async (req, res) => {
     const row = checkResult.rows[0];
     console.log('Found space:', row);
 
-    // 🧠 Role-based access logic:
+    // Role-based access logic
     const exclusive = row.exclusive?.toLowerCase() || 'normal';
     const role = user.role?.toLowerCase() || 'user';
 
@@ -374,7 +422,7 @@ app.post('/api/parking/reserve', async (req, res) => {
       });
     }
 
-    if (row.state !== 'available' && row.exclusive !== 'available') {
+    if (row.state !== 'available') {
       return res.status(400).json({ error: 'Parking space is not available' });
     }
 
@@ -384,6 +432,14 @@ app.post('/api/parking/reserve', async (req, res) => {
             SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
             WHERE "index" = ?`,
       args: ['taken', plate, days, currentTime, index]
+    });
+
+    // Update user's slot info in accounts table
+    await db.execute({
+      sql: `UPDATE accounts 
+            SET slot_index_taken = ?, location_taken = ? 
+            WHERE email = ?`,
+      args: [index, row.location_index, user.email]
     });
 
     const updatedResult = await db.execute({
