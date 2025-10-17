@@ -184,6 +184,13 @@
   $container.append(spaceDiv);
 });
 
+$container.find('.parking-space').tooltip({
+        content: function() { return $(this).prop('title'); },
+        track: true,
+        show: { effect: "fade", duration: 200 },
+        hide: { effect: "fade", duration: 200 }
+    });
+
 
   updateButtonStates();
 }
