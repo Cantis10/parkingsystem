@@ -78,6 +78,18 @@ function requireAuth(req, res, next) {
   }
 }
 
+function getUserFromToken(req) {
+  const token = req.cookies?.token;
+  if (!token) return null;
+
+  try {
+    return jwt.verify(token, process.env.JWT_SECRET);
+  } catch (err) {
+    console.error("Invalid token:", err);
+    return null;
+  }
+}
+
 
 app.get('/api/locations', async (req, res) => {
   try {
@@ -356,6 +368,11 @@ app.post('/api/parking/reserve', async (req, res) => {
 
   console.log('Reservation request:', { index, plate, days });
 
+  const user = getUserFromToken(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
   if (!index || !plate || !days || days <= 0) {
     return res.status(400).json({ error: 'Invalid reservation data' });
   }
@@ -363,7 +380,6 @@ app.post('/api/parking/reserve', async (req, res) => {
   const currentTime = new Date().toISOString();
 
   try {
-    // First check if the space is available
     const checkResult = await db.execute({
       sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
       args: [index]
@@ -376,11 +392,21 @@ app.post('/api/parking/reserve', async (req, res) => {
     const row = checkResult.rows[0];
     console.log('Found space:', row);
 
+    // 🧠 Role-based access logic:
+    const exclusive = row.exclusive?.toLowerCase() || 'normal';
+    const role = user.role?.toLowerCase() || 'user';
+
+    if (exclusive !== 'normal' && exclusive !== role) {
+      return res.status(403).json({
+        error: `Only ${exclusive.toUpperCase()} users can reserve this parking space`
+      });
+    }
+
     if (row.state !== 'available' && row.exclusive !== 'available') {
       return res.status(400).json({ error: 'Parking space is not available' });
     }
 
-    // Update the parking space
+    // Reserve the space
     await db.execute({
       sql: `UPDATE parking_spaces 
             SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
@@ -388,7 +414,6 @@ app.post('/api/parking/reserve', async (req, res) => {
       args: ['taken', plate, days, currentTime, index]
     });
 
-    // Fetch the updated row
     const updatedResult = await db.execute({
       sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
       args: [index]
@@ -415,13 +440,14 @@ app.post('/api/parking/reserve', async (req, res) => {
       restrictionFrequency: updatedRow.restriction_frequency
     };
 
-    console.log('Reservation successful:', updatedSpace);
+    console.log(`Reservation successful by ${user.role}:`, updatedSpace);
     res.json(updatedSpace);
   } catch (err) {
     console.error('Error during reservation:', err);
     res.status(500).json({ error: 'Failed to reserve parking space', details: err.message });
   }
 });
+
 
 app.get('/api/debug/all-tables', async (req, res) => {
   try {
