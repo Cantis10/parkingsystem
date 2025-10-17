@@ -307,32 +307,41 @@ app.get('/api/parking/:location_id', async (req, res) => {
             args: [locationId]
         });
 
-        const spaces = result.rows.map(row => ({
-            id: row.id,
-            state: row.state,
-            feature: row.exclusive,
-            price: row.price,
-            index: row.index,
-            // 💡 FIX: Ensure floor is parsed as an integer for frontend consistency
-            floor: parseInt(row.floor, 10),
-            locationIndex: parseInt(row.location_index, 10),
-            // Ensure location coordinates are integers for consistent calculation
-            locationX: parseInt(row.location_x, 10),
-            locationY: parseInt(row.location_y, 10),
-            sizeX: parseInt(row.width, 10),
-            sizeY: parseInt(row.height, 10),
-            plate: row.plate,
-            daysToOccupy: row.days_to_occupy,
-            lastUpdate: row.last_update,
-            restrictionStart: row.restriction_start,
-            restrictionEnd: row.restriction_end,
-            restrictionFrequency: row.restriction_frequency
-        }));
+        const spaces = result.rows.map(row => {
+            // CRITICAL FIX: Use Number.isInteger to check if the value is a valid integer.
+            // If the row.floor is non-numeric (NaN), default it to 0 or another known integer.
+            const parsedFloor = parseInt(row.floor, 10);
+            const floorValue = Number.isNaN(parsedFloor) ? 0 : parsedFloor; 
+            
+            return {
+                id: row.id,
+                state: row.state,
+                feature: row.exclusive,
+                price: row.price,
+                index: row.index,
+                
+                // Use the safely parsed floor value
+                floor: floorValue, 
+                
+                // Ensure other coordinates are also safely parsed
+                locationIndex: parseInt(row.location_index, 10) || 0,
+                locationX: parseInt(row.location_x, 10) || 0,
+                locationY: parseInt(row.location_y, 10) || 0,
+                sizeX: parseInt(row.width, 10) || 0,
+                sizeY: parseInt(row.height, 10) || 0,
+                plate: row.plate,
+                daysToOccupy: row.days_to_occupy,
+                lastUpdate: row.last_update,
+                restrictionStart: row.restriction_start,
+                restrictionEnd: row.restriction_end,
+                restrictionFrequency: row.restriction_frequency
+            };
+        });
         
-        // Log the data type being sent for verification
+        // Log the new parsed value
         console.log('Rows found:', result.rows.length);
         if (spaces.length > 0) {
-            console.log(`[API Parking Success] Location ${locationId}: Found ${spaces.length} spaces. First floor type: ${typeof spaces[0].floor}, Value: ${spaces[0].floor}`);
+            console.log(`[API Parking Success - FIXED] Location ${locationId}: Found ${spaces.length} spaces. First floor type: ${typeof spaces[0].floor}, Value: ${spaces[0].floor}`);
         } else {
             console.log(`[API Parking Success] Location ${locationId}: Found 0 spaces.`);
         }
@@ -343,7 +352,6 @@ app.get('/api/parking/:location_id', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
     }
 });
-
 
 // API endpoint to reserve a parking space (updated to use 'index' column)
 app.post('/api/parking/reserve', async (req, res) => {
