@@ -343,12 +343,10 @@ app.get('/api/locations', async (req, res) => {
 
     const locations = result.rows.map(row => ({
       id: row.id,
-      name: row.name,
       imageIndex: row.image_index,
-      averagePrice: row.average_price,
-      addressLocation: row.address_location,
-      availableSpots: row.available_spots,
-      redirect: row.redirect || '/map'
+      averagePrice: row.avarage_price,
+      addressLocation: row.adress_location,
+      availableSpots: row.current_available
     }));
 
     res.json(locations);
@@ -357,7 +355,6 @@ app.get('/api/locations', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch locations', details: err.message });
   }
 });
-
 // Export for Vercel
 module.exports = app;
 
