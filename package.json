@@ -21,6 +21,7 @@
     "express-session": "^1.18.2",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.15.1",
+    "nodemailer": "^7.0.9",
     "sqlite3": "^5.1.7"
   }
 }
