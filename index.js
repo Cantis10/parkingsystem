@@ -6,9 +6,18 @@ const session = require('express-session');
 const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
-
+const PORT = process.env.PORT || 3000;
 const app = express();
+
+const BASE_URL =
+  process.env.BASE_URL ||
+  (process.env.CODESPACE_NAME
+    ? `https://${process.env.CODESPACE_NAME}-3000.app.github.dev`
+    : `http://localhost:${process.env.PORT || 3000}`);
+
+console.log('✅ BASE_URL set to:', BASE_URL);
 
 // Middleware to parse JSON bodies
 app.use(express.json());
@@ -32,6 +41,54 @@ try {
   console.error('Failed to initialize Turso client:', err);
   process.exit(1);
 }
+
+app.get('/api/auth/verify/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userEmail = decoded.email;
+
+    await db.execute(`
+      CREATE TABLE IF NOT EXISTS pending_verifications (
+        email TEXT PRIMARY KEY,
+        verified INTEGER DEFAULT 0
+      );
+    `);
+
+    await db.execute({
+      sql: `
+        INSERT INTO pending_verifications (email, verified)
+        VALUES (?, 1)
+        ON CONFLICT(email) DO UPDATE SET verified = 1;
+      `,
+      args: [userEmail],
+    });
+
+    console.log(`✅ Email verified: ${userEmail}`);
+
+    res.json({ success: true, email: userEmail, message: 'Email verified. You may now complete registration.' });
+
+  } catch (err) {
+    console.error('Verification error:', err);
+    res.status(400).json({ success: false, error: 'Invalid or expired verification link.' });
+  }
+});
+
+
+
+
+
+
+
+
+//add mail transporter
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER, // Your Gmail
+    pass: process.env.EMAIL_PASS  // App password (not your login password)
+  },
+});
 
 
 
@@ -128,7 +185,11 @@ app.post('/api/auth/login', async (req, res) => {
     if (result.rows.length === 0)
       return res.status(401).json({ error: 'Invalid credentials' });
 
+
     const user = result.rows[0];
+    if (!user.verified) {
+      return res.status(403).json({ error: 'Please verify your email before logging in.' });
+    }
     const token = jwt.sign(
       {
         username: user.username,
@@ -163,6 +224,42 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
+app.post('/api/auth/request-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+
+    // Generate JWT token for verification
+    const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
+    const verificationLink = `${BASE_URL}/api/auth/verify/${encodeURIComponent(token)}`;
+    console.log('Verification token:', token);
+  console.log('Verification link:', verificationLink);
+
+
+    // Send verification email
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: 'Verify your email address',
+      html: `
+        <h2>Verify your email address</h2>
+        <p>Click below to verify this email before registration:</p>
+        <p><a href="${verificationLink}" target="_blank">${verificationLink}</a></p>
+        <p>If you didn’t request this, ignore it.</p>
+      `
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log('📧 Verification email sent to:', email);
+    res.json({ success: true, message: 'Verification email sent' });
+  } catch (err) {
+    console.error('Email send error:', err);
+    res.status(500).json({ error: 'Failed to send verification email' });
+  }
+});
+
+
 
 // Register endpoint
 app.post('/api/auth/register', async (req, res) => {
@@ -171,6 +268,16 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(400).json({ error: 'All fields required' });
 
   try {
+    // Check if already verified in pending_verifications
+    const verification = await db.execute({
+      sql: 'SELECT verified FROM pending_verifications WHERE email = ?',
+      args: [email]
+    });
+
+    if (verification.rows.length === 0 || !verification.rows[0].verified) {
+      return res.status(403).json({ error: 'Please verify your email before registering.' });
+    }
+
     const existing = await db.execute({
       sql: 'SELECT * FROM accounts WHERE email = ? OR username = ?',
       args: [email, username]
@@ -179,18 +286,45 @@ app.post('/api/auth/register', async (req, res) => {
     if (existing.rows.length > 0)
       return res.status(409).json({ error: 'Email or username already exists' });
 
-    // Insert with NULL slot_index_taken and location_taken initially
+    // ✅ Insert verified user directly
     await db.execute({
-      sql: 'INSERT INTO accounts (username, email, password, role, liscense_plate, slot_index_taken, location_taken) VALUES (?, ?, ?, ?, ?, NULL, NULL)',
-      args: [username, email, password, 'user', liscense_plate]
+      sql: `INSERT INTO accounts 
+            (username, email, password, role, liscense_plate, verified, slot_index_taken, location_taken) 
+            VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
+      args: [username, email, password, 'user', liscense_plate, true]
     });
 
-    res.json({ success: true });
+    // ✅ Remove from pending_verifications
+    await db.execute({
+  sql: 'DELETE FROM pending_verifications WHERE email = ?',
+  args: [email]
+});
+
+
+    // ✅ Auto-login token
+    const token = jwt.sign({ username, email, role: 'user', liscense_plate }, process.env.JWT_SECRET, {
+      expiresIn: '24h'
+    });
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000
+    });
+
+    res.json({ success: true, message: 'Account created and logged in automatically!' });
   } catch (err) {
     console.error('Registration error:', err);
     res.status(500).json({ error: 'Registration failed', details: err.message });
   }
 });
+
+
+
+
+
+
 
 // Session check endpoint
 app.get('/api/auth/check', (req, res) => {
@@ -200,18 +334,98 @@ app.get('/api/auth/check', (req, res) => {
 
 // Root route
 app.get('/', (req, res) => {
+  const token = req.cookies?.token;
+  if (!token) return res.redirect('/login');
 
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET environment variable not set');
-  }
-
-  if (!req.session.user) {
+  try {
+    jwt.verify(token, process.env.JWT_SECRET);
     return res.redirect('/home');
+  } catch {
+    return res.redirect('/login');
   }
-  return res.redirect('/home');
 });
 
 
+app.get('/admin-map', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin-map.html'));
+});
+
+app.post('/api/admin/parking/update', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin privileges required' });
+  }
+
+  const {
+    index,
+    location_x,
+    location_y,
+    width,
+    height,
+    floor,
+    price,
+    state,
+    exclusive,
+    plate,
+    days_to_occupy,
+    restriction_start,
+    restriction_end,
+    restriction_frequency
+  } = req.body;
+
+  if (!index) {
+    return res.status(400).json({ error: 'Parking space index required' });
+  }
+
+  try {
+    // Verify the parking space exists and get its location_index
+    const spaceResult = await db.execute({
+      sql: 'SELECT location_index FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    if (spaceResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Parking space not found' });
+    }
+
+    const locationIndex = spaceResult.rows[0].location_index;
+
+    // Verify admin has access to this location
+    if (user.location_index_admin && parseInt(user.location_index_admin) !== parseInt(locationIndex)) {
+      return res.status(403).json({ error: 'You do not have admin access to this location' });
+    }
+
+    // Update the parking space
+    const currentTime = new Date().toISOString();
+    await db.execute({
+      sql: `UPDATE parking_spaces 
+            SET location_x = ?, location_y = ?, width = ?, height = ?, 
+                floor = ?, price = ?, state = ?, exclusive = ?, 
+                plate = ?, days_to_occupy = ?, last_update = ?,
+                restriction_start = ?, restriction_end = ?, restriction_frequency = ?
+            WHERE "index" = ?`,
+      args: [
+        location_x, location_y, width, height,
+        floor, price, state, exclusive,
+        plate, days_to_occupy, currentTime,
+        restriction_start, restriction_end, restriction_frequency,
+        index
+      ]
+    });
+
+    // Update the location's available slots count
+    await updateLocationAvailableSlots(locationIndex);
+
+    res.json({ success: true, message: 'Parking space updated successfully' });
+  } catch (err) {
+    console.error('Error updating parking space:', err);
+    res.status(500).json({ error: 'Failed to update parking space', details: err.message });
+  }
+});
 
 // Get user data endpoint
 app.get('/api/auth/user', async (req, res) => {
@@ -220,7 +434,7 @@ app.get('/api/auth/user', async (req, res) => {
 
   try {
     const result = await db.execute({
-      sql: 'SELECT email, username, liscense_plate, role FROM accounts WHERE email = ?',
+      sql: 'SELECT email, username, liscense_plate, role, location_index_admin FROM accounts WHERE email = ?',
       args: [user.email]
     });
 
@@ -231,6 +445,23 @@ app.get('/api/auth/user', async (req, res) => {
   } catch (err) {
     console.error('Error fetching user:', err);
     res.status(500).json({ error: 'Failed to fetch user data' });
+  }
+});
+
+app.get('/test-email', async (req, res) => {
+  try {
+    const info = await transporter.sendMail({
+      from: `"Parking Web Test" <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_USER, // send to yourself first
+      subject: '✅ Test Email from Parking Web',
+      text: 'If you got this, your Gmail setup is working!',
+    });
+
+    console.log('Email sent:', info.messageId);
+    res.send('✅ Test email sent successfully!');
+  } catch (err) {
+    console.error('❌ Email test failed:', err);
+    res.status(500).send(`❌ Failed to send email: ${err.message}`);
   }
 });
 
@@ -354,12 +585,10 @@ app.post('/api/parking/release', async (req, res) => {
 
     const row = checkResult.rows[0];
 
-    // Check if this space belongs to the user
     if (row.plate !== user.liscense_plate) {
       return res.status(403).json({ error: 'You can only release your own parking space' });
     }
 
-    // Release the space
     await db.execute({
       sql: `UPDATE parking_spaces 
             SET state = ?, plate = NULL, days_to_occupy = 0, last_update = ? 
@@ -367,13 +596,15 @@ app.post('/api/parking/release', async (req, res) => {
       args: ['available', new Date().toISOString(), index]
     });
 
-    // Clear user's slot info
     await db.execute({
       sql: `UPDATE accounts 
             SET slot_index_taken = NULL, location_taken = NULL 
             WHERE email = ?`,
       args: [user.email]
     });
+
+    // Update location available slots
+    await updateLocationAvailableSlots(row.location_index);
 
     res.json({ success: true, message: 'Parking space released' });
   } catch (err) {
@@ -412,7 +643,6 @@ app.post('/api/parking/reserve', async (req, res) => {
     const row = checkResult.rows[0];
     console.log('Found space:', row);
 
-    // Role-based access logic
     const exclusive = row.exclusive?.toLowerCase() || 'normal';
     const role = user.role?.toLowerCase() || 'user';
 
@@ -426,7 +656,6 @@ app.post('/api/parking/reserve', async (req, res) => {
       return res.status(400).json({ error: 'Parking space is not available' });
     }
 
-    // Reserve the space
     await db.execute({
       sql: `UPDATE parking_spaces 
             SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
@@ -434,13 +663,15 @@ app.post('/api/parking/reserve', async (req, res) => {
       args: ['taken', plate, days, currentTime, index]
     });
 
-    // Update user's slot info in accounts table
     await db.execute({
       sql: `UPDATE accounts 
             SET slot_index_taken = ?, location_taken = ? 
             WHERE email = ?`,
       args: [index, row.location_index, user.email]
     });
+
+    // Update location available slots
+    await updateLocationAvailableSlots(row.location_index);
 
     const updatedResult = await db.execute({
       sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
@@ -476,6 +707,29 @@ app.post('/api/parking/reserve', async (req, res) => {
   }
 });
 
+async function updateLocationAvailableSlots(locationId) {
+  try {
+    const result = await db.execute({
+      sql: 'SELECT COUNT(*) as count FROM parking_spaces WHERE location_index = ? AND state = ?',
+      args: [locationId, 'available']
+    });
+
+    const availableCount = result.rows[0].count;
+
+    await db.execute({
+      sql: 'UPDATE locations SET current_available = ? WHERE id = ?',
+      args: [availableCount, locationId]
+    });
+
+    console.log(`Updated location ${locationId}: ${availableCount} available slots`);
+    return availableCount;
+  } catch (err) {
+    console.error('Error updating location slots:', err);
+    throw err;
+  }
+}
+
+
 
 app.get('/api/debug/all-tables', async (req, res) => {
   try {
@@ -507,8 +761,9 @@ app.get('/api/debug/all-tables', async (req, res) => {
 // Export for Vercel
 module.exports = app;
 
-//antivercel
-const PORT = process.env.PORT || 3000;
+// Local (non-Vercel) server startup
+
+
 app.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
 });

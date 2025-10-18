@@ -41,6 +41,25 @@
             border: 8px solid transparent;
             border-top-color: white;
         }
+        /* Admin card styling */
+        .admin-managed-card {
+            background: linear-gradient(135deg, #ff9800 0%, #ffc107 100%);
+            border: 3px solid #f57c00 !important;
+            position: relative;
+        }
+        .admin-badge-card {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: #fff;
+            color: #ff9800;
+            padding: 5px 10px;
+            border-radius: 15px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            z-index: 10;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
     </style>
 </head>
 
@@ -53,7 +72,7 @@
             </div>
 
             <a class="navbar-brand d-flex align-items-center" href="#">
-                Master Parker</i>
+                Master Parker
             </a>
         </div>
     </nav>
@@ -108,6 +127,18 @@
     <script>
         $(document).ready(function () {
             let cardData = [];
+            let userRole = null;
+            let userAdminLocationId = null;
+
+            // Get user data first
+            $.get('/api/auth/user', function(userData) {
+                userRole = userData.role;
+                userAdminLocationId = userData.location_index_admin;
+                loadLocations();
+            }).fail(function() {
+                // User not logged in, just load locations normally
+                loadLocations();
+            });
 
             // Function to load locations from API
             function loadLocations() {
@@ -125,10 +156,18 @@
                 const numBgColor = data.currentAvailable > 0 ? 'green' : 'red';
                 const imagePath = `/images/${data.imageIndex}`;
                 const cardTitle = data.addressLocation || 'Parking Location';
+                
+                // Check if this is an admin-managed location
+                const isAdminManaged = (userRole === 'admin' && userAdminLocationId && parseInt(userAdminLocationId) === parseInt(data.id));
+                const adminBadge = isAdminManaged ? '<div class="admin-badge-card"><i class="fas fa-shield-alt"></i> ADMIN</div>' : '';
+                const adminCardClass = isAdminManaged ? 'admin-managed-card' : '';
 
-                // If available, wrap with <a>
+                // Determine the link - admin goes to admin-map, regular users go to map
+                const mapLink = isAdminManaged ? `/admin-map?location_id=${data.id}` : `/map?location_id=${data.id}`;
+
                 const cardContent = `
-        <div class="card h-100 ${data.currentAvailable > 0 ? 'card-hover' : 'disabled'}">
+        <div class="card h-100 ${data.currentAvailable > 0 ? 'card-hover' : 'disabled'} ${adminCardClass}">
+            ${adminBadge}
             <img src="${imagePath}" class="card-img-top" alt="${cardTitle}">
 
             <div class="card-body">
@@ -155,7 +194,7 @@
                     // clickable - pass location_id as query parameter
                     return `
             <div class="col-12 col-md-6 col-lg-4 mb-4">
-                <a href="/map?location_id=${data.id}" class="text-decoration-none text-dark">
+                <a href="${mapLink}" class="text-decoration-none text-dark">
                     ${cardContent}
                 </a>
             </div>
@@ -181,9 +220,6 @@
                     $('#card-container').append('<div class="col-12 text-center text-muted">No cards found matching the criteria.</div>');
                 }
             }
-
-            // Load locations on page load
-            loadLocations();
 
             // Pop-up logic
             const $searchIconRow = $('#search-icon-row');
