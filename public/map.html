@@ -14,13 +14,22 @@
     .parking-space {
       position: absolute;
       background-color: rgba(0, 123, 255, 0.4);
-      border: 1px solid blue;
+      border: 2px solid blue;
       z-index: 10;
       cursor: pointer;
+      transition: all 0.2s;
     }
-    .parking-space.state-occupied {
+    .parking-space:hover {
+      border-color: #ffc107;
+      box-shadow: 0 0 10px rgba(255, 193, 7, 0.8);
+    }
+    .parking-space.state-taken {
       background-color: rgba(220, 53, 69, 0.6);
-      border: 1px solid red;
+      border: 2px solid red;
+    }
+    .parking-space.state-available {
+      background-color: rgba(40, 167, 69, 0.6);
+      border: 2px solid green;
     }
     .map-container {
       position: absolute;
