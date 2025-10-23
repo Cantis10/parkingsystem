@@ -450,21 +450,26 @@ app.get('/api/auth/user', async (req, res) => {
 
 app.get('/test-email', async (req, res) => {
   try {
-    const info = await transporter.sendMail({
-      from: `"Parking Web Test" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER, // send to yourself first
-      subject: '✅ Test Email from Parking Web',
-      text: 'If you got this, your Gmail setup is working!',
+    console.log('Environment check:', {
+      EMAIL_USER: process.env.EMAIL_USER,
+      EMAIL_PASS_EXISTS: !!process.env.EMAIL_PASS,
+      EMAIL_PASS_LENGTH: process.env.EMAIL_PASS?.length
     });
 
-    console.log('Email sent:', info.messageId);
+    const info = await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_USER,
+      subject: '✅ Test Email from Render',
+      text: 'If you got this, email works on Render!',
+    });
+
+    console.log('✅ Email sent:', info.messageId);
     res.send('✅ Test email sent successfully!');
   } catch (err) {
     console.error('❌ Email test failed:', err);
-    res.status(500).send(`❌ Failed to send email: ${err.message}`);
+    res.status(500).send(`❌ Failed: ${err.message} (Code: ${err.code})`);
   }
 });
-
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
