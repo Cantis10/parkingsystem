@@ -6,7 +6,9 @@ const session = require('express-session');
 const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 require('dotenv').config();
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -234,7 +236,7 @@ app.post('/api/auth/request-verification', async (req, res) => {
     const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
     const verificationLink = `${BASE_URL}/api/auth/verify/${encodeURIComponent(token)}`;
     console.log('Verification token:', token);
-  console.log('Verification link:', verificationLink);
+    console.log('Verification link:', verificationLink);
 
 
     // Send verification email
@@ -250,7 +252,18 @@ app.post('/api/auth/request-verification', async (req, res) => {
       `
     };
 
-    await transporter.sendMail(mailOptions);
+    await resend.emails.send({
+      from: 'no-reply@yourapp.dev', // You can use any domain for now
+      to: email,
+      subject: 'Verify your email address',
+      html: `
+    <h2>Verify your email address</h2>
+    <p>Click below to verify this email before registration:</p>
+    <p><a href="${verificationLink}" target="_blank">${verificationLink}</a></p>
+    <p>If you didn’t request this, ignore it.</p>
+  `
+    });
+
     console.log('📧 Verification email sent to:', email);
     res.json({ success: true, message: 'Verification email sent' });
   } catch (err) {
@@ -296,9 +309,9 @@ app.post('/api/auth/register', async (req, res) => {
 
     // ✅ Remove from pending_verifications
     await db.execute({
-  sql: 'DELETE FROM pending_verifications WHERE email = ?',
-  args: [email]
-});
+      sql: 'DELETE FROM pending_verifications WHERE email = ?',
+      args: [email]
+    });
 
 
     // ✅ Auto-login token
@@ -450,26 +463,22 @@ app.get('/api/auth/user', async (req, res) => {
 
 app.get('/test-email', async (req, res) => {
   try {
-    console.log('Environment check:', {
-      EMAIL_USER: process.env.EMAIL_USER,
-      EMAIL_PASS_EXISTS: !!process.env.EMAIL_PASS,
-      EMAIL_PASS_LENGTH: process.env.EMAIL_PASS?.length
-    });
-
-    const info = await transporter.sendMail({
-      from: process.env.EMAIL_USER,
+    const info = await resend.emails.send({
+      from: 'no-reply@yourapp.dev',
       to: process.env.EMAIL_USER,
-      subject: '✅ Test Email from Render',
-      text: 'If you got this, email works on Render!',
+      subject: '✅ Test Email from Parking Web (Resend)',
+      text: 'If you got this, your Resend setup is working!',
     });
 
-    console.log('✅ Email sent:', info.messageId);
+
+    console.log('Email sent:', info.messageId);
     res.send('✅ Test email sent successfully!');
   } catch (err) {
     console.error('❌ Email test failed:', err);
-    res.status(500).send(`❌ Failed: ${err.message} (Code: ${err.code})`);
+    res.status(500).send(`❌ Failed to send email: ${err.message}`);
   }
 });
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
