@@ -94,6 +94,25 @@
       let parkingSpaces = [];
       let currentFloorIndex = 0;
       let activeContainerSelector = '#map-container-1';
+      let userLicensePlate = ''; // Store user's license plate
+
+      // Fetch user data to get license plate
+      function fetchUserData(callback) {
+        $.ajax({
+          url: '/api/auth/user',
+          method: 'GET',
+          success: function(data) {
+            userLicensePlate = data.liscense_plate || '';
+            console.log('User license plate loaded:', userLicensePlate);
+            if (callback) callback();
+          },
+          error: function(xhr) {
+            console.error('Failed to fetch user data:', xhr);
+            alert('Failed to load user information. Please log in again.');
+            window.location.href = '/login';
+          }
+        });
+      }
 
       function fetchMaps(callback) {
         $.ajax({
@@ -198,7 +217,9 @@
           <p><strong>Type:</strong> ${space.feature}</p>
           <p><strong>Price:</strong> PHP ${parseFloat(space.price).toFixed(2)}</p>
         `);
-        $('#reserve-plate').val('');
+        
+        // Auto-fill license plate and make it readonly
+        $('#reserve-plate').val(userLicensePlate).prop('readonly', true);
         $('#reserve-days').val('');
         $('#reserve-index').val(space.index);
 
@@ -222,8 +243,13 @@
         const plate = $('#reserve-plate').val().trim();
         const days = parseInt($('#reserve-days').val(), 10);
 
-        if (!plate || !days || days <= 0) {
-          alert('Please enter a valid plate and number of days.');
+        if (!plate) {
+          alert('License plate is required.');
+          return;
+        }
+
+        if (!days || days <= 0) {
+          alert('Please enter a valid number of days.');
           return;
         }
 
@@ -251,14 +277,16 @@
         });
       });
 
-      // init
-      fetchMaps(function() {
-        fetchParkingSpaces(function() {
-          if (mapData.floors.length > 0) {
-            loadFloor(currentFloorIndex, activeContainerSelector);
-          } else {
-            alert('No maps available for this location.');
-          }
+      // Initialize: Fetch user data first, then maps and parking spaces
+      fetchUserData(function() {
+        fetchMaps(function() {
+          fetchParkingSpaces(function() {
+            if (mapData.floors.length > 0) {
+              loadFloor(currentFloorIndex, activeContainerSelector);
+            } else {
+              alert('No maps available for this location.');
+            }
+          });
         });
       });
     });
@@ -277,8 +305,9 @@
           <div id="reserve-not-available" class="alert alert-warning" style="display:none;"></div>
           <div id="reserve-form-row">
             <div class="mb-2">
-              <label for="reserve-plate" class="form-label">Plate</label>
-              <input id="reserve-plate" class="form-control" type="text" placeholder="Enter license plate">
+              <label for="reserve-plate" class="form-label">License Plate</label>
+              <input id="reserve-plate" class="form-control" type="text" placeholder="Your license plate" readonly style="background-color: #e9ecef;">
+              <small class="text-muted">Your license plate is automatically loaded from your account.</small>
             </div>
             <div class="mb-2">
               <label for="reserve-days" class="form-label">Days to park</label>
