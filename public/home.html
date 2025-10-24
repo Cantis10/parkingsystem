@@ -282,16 +282,7 @@
                 togglePopup();
             });
 
-            // Check login status and update login button
-            $.get('/api/auth/check', function(data) {
-                if (data.isLoggedIn) {
-                    // Get user data to include in login URL
-                    $.get('/api/auth/user', function(userData) {
-                        const loginUrl = `/login?email=${encodeURIComponent(userData.email)}&pass=${encodeURIComponent(userData.password)}`;
-                        $('#loginButton a').attr('href', loginUrl);
-                    });
-                }
-            });
+
         });
     </script>
 
