@@ -29,6 +29,21 @@
       background-color: rgba(40, 167, 69, 0.6);
       border: 2px solid green;
     }
+    .parking-space.user-occupied {
+      background-color: rgba(255, 215, 0, 0.8) !important;
+      border: 3px solid gold !important;
+      box-shadow: 0 0 15px rgba(255, 215, 0, 0.9);
+      animation: pulse-gold 2s infinite;
+      z-index: 15 !important;
+    }
+    @keyframes pulse-gold {
+      0%, 100% {
+        box-shadow: 0 0 15px rgba(255, 215, 0, 0.9);
+      }
+      50% {
+        box-shadow: 0 0 25px rgba(255, 215, 0, 1);
+      }
+    }
     .map-container {
       position: absolute;
       top: 0;
@@ -95,15 +110,18 @@
       let currentFloorIndex = 0;
       let activeContainerSelector = '#map-container-1';
       let userLicensePlate = ''; // Store user's license plate
+      let userSlotIndex = null; // Store user's occupied slot index
 
-      // Fetch user data to get license plate
+      // Fetch user data to get license plate and slot index
       function fetchUserData(callback) {
         $.ajax({
           url: '/api/auth/user',
           method: 'GET',
           success: function(data) {
             userLicensePlate = data.liscense_plate || '';
+            userSlotIndex = data.slot_index_taken || null;
             console.log('User license plate loaded:', userLicensePlate);
+            console.log('User slot index:', userSlotIndex);
             if (callback) callback();
           },
           error: function(xhr) {
@@ -157,12 +175,16 @@
         // clear old
         $container.find('.parking-space').remove();
 
-        // show all visible parking spaces (like in admin)
+        // show all visible parking spaces
         parkingSpaces.forEach(space => {
+          // Check if this space is occupied by the current user
+          const isUserSpace = (userSlotIndex && space.index == userSlotIndex) || 
+                             (userLicensePlate && space.plate === userLicensePlate);
+          
           const spaceDiv = $('<div>', {
-            'class': `parking-space state-${space.state}`,
+            'class': `parking-space state-${space.state} ${isUserSpace ? 'user-occupied' : ''}`,
             'data-index': space.index,
-            'title': `Space #${space.index} | Floor: ${space.floor} | State: ${space.state} | Type: ${space.feature} | Price: PHP ${parseFloat(space.price).toFixed(2)}`
+            'title': `Space #${space.index} | Floor: ${space.floor} | State: ${space.state} | Type: ${space.feature} | Price: PHP ${parseFloat(space.price).toFixed(2)}${isUserSpace ? ' | YOUR SPACE' : ''}`
           }).css({
             top: `${space.locationY}%`,
             left: `${space.locationX}%`,
@@ -211,11 +233,15 @@
         const space = parkingSpaces.find(s => s.index == idx);
         if (!space) return;
 
-        $('#reserveModalLabel').text(`Space #${space.index}`);
+        const isUserSpace = (userSlotIndex && space.index == userSlotIndex) || 
+                           (userLicensePlate && space.plate === userLicensePlate);
+
+        $('#reserveModalLabel').text(`Space #${space.index}${isUserSpace ? ' (Your Space)' : ''}`);
         $('#reserve-space-info').html(`
           <p><strong>State:</strong> ${space.state}</p>
           <p><strong>Type:</strong> ${space.feature}</p>
           <p><strong>Price:</strong> PHP ${parseFloat(space.price).toFixed(2)}</p>
+          ${isUserSpace ? '<p class="text-warning"><strong><i class="fas fa-star"></i> This is your current parking space</strong></p>' : ''}
         `);
         
         // Auto-fill license plate and make it readonly
@@ -230,7 +256,11 @@
           $('#reserve-submit').prop('disabled', false);
         } else {
           $('#reserve-form-row').hide();
-          $('#reserve-not-available').show().text('This space is not available for reservation.');
+          if (isUserSpace) {
+            $('#reserve-not-available').show().html('<i class="fas fa-info-circle"></i> This is your current parking space. You can release it from the home page.');
+          } else {
+            $('#reserve-not-available').show().text('This space is not available for reservation.');
+          }
           $('#reserve-submit').prop('disabled', true);
         }
 
@@ -259,9 +289,12 @@
           contentType: 'application/json',
           data: JSON.stringify({ index, plate, days }),
           success: function () {
-            fetchParkingSpaces(function() {
-              loadFloor(currentFloorIndex, activeContainerSelector);
-              $('#reserveModal').modal('hide');
+            // Re-fetch user data to update slot_index_taken
+            fetchUserData(function() {
+              fetchParkingSpaces(function() {
+                loadFloor(currentFloorIndex, activeContainerSelector);
+                $('#reserveModal').modal('hide');
+              });
             });
           },
           error: function (xhr) {
