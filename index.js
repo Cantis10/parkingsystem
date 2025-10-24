@@ -6,7 +6,7 @@ const session = require('express-session');
 const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -74,7 +74,22 @@ app.get('/api/auth/verify/:token', async (req, res) => {
   }
 });
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+
+
+
+
+
+
+
+//add mail transporter
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: process.env.EMAIL_USER, // Your Gmail
+    pass: process.env.EMAIL_PASS  // App password (not your login password)
+  },
+});
+
 
 
 // Add session middleware with better configuration for Vercel
@@ -209,65 +224,18 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ success: true });
 });
 
-app.post('/api/auth/request-verification', async (req, res) => {
-  try {
-    console.log("test");
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
-
-    // Generate JWT token for verification
-    const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
-    const verificationLink = `${BASE_URL}/api/auth/verify/${encodeURIComponent(token)}`;
-    
-    console.log('Verification token:', token);
-    console.log('Verification link:', verificationLink);
-
-    // Send verification email using Resend
-    const { data, error } = await resend.emails.send({
-      from: 'onboarding@resend.dev', // Update with your verified domain
-      to: email,
-      subject: 'Verify your email address',
-      html: `
-        <h2>Verify your email address</h2>
-        <p>Click below to verify this email before registration:</p>
-        <p><a href="${verificationLink}" target="_blank">${verificationLink}</a></p>
-        <p>If you didn't request this, ignore it.</p>
-      `
-    });
-
-    if (error) {
-      console.error('Resend error:', error);
-      return res.status(500).json({ error: 'Failed to send verification email' });
-    }
-
-    console.log('📧 Verification email sent to:', email, 'ID:', data.id);
-    res.json({ success: true, message: 'Verification email sent' });
-  } catch (err) {
-    console.error('Email send error:', err);
-    res.status(500).json({ error: 'Failed to send verification email' });
-  }
-});
 
 
 
 
-// Register endpoint
+// Updated Register endpoint with automatic verification email
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password, liscense_plate } = req.body;
   if (!username || !email || !password || !liscense_plate)
     return res.status(400).json({ error: 'All fields required' });
 
   try {
-    // Check if already verified in pending_verifications
-    const verification = await db.execute({
-      sql: 'SELECT verified FROM pending_verifications WHERE email = ?',
-      args: [email]
-    });
-
-    if (verification.rows.length === 0 || !verification.rows[0].verified) {
-      return res.status(403).json({ error: 'Please verify your email before registering.' });
-    }
-
+    // Check if user already exists
     const existing = await db.execute({
       sql: 'SELECT * FROM accounts WHERE email = ? OR username = ?',
       args: [email, username]
@@ -276,7 +244,53 @@ app.post('/api/auth/register', async (req, res) => {
     if (existing.rows.length > 0)
       return res.status(409).json({ error: 'Email or username already exists' });
 
-    // ✅ Insert verified user directly
+    // Check if email has been verified
+    const verification = await db.execute({
+      sql: 'SELECT verified FROM pending_verifications WHERE email = ?',
+      args: [email]
+    });
+
+    // If not verified, send verification email
+    if (verification.rows.length === 0 || !verification.rows[0].verified) {
+      console.log(`📧 User ${email} not verified. Sending verification email...`);
+      
+      // Generate JWT token for verification
+      const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
+      const verificationLink = `${BASE_URL}/api/auth/verify/${encodeURIComponent(token)}`;
+
+      // Send verification email
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: email,
+        subject: 'Verify your email address',
+        html: `
+          <h2>Verify your email address</h2>
+          <p>Click below to verify this email before completing your registration:</p>
+          <p><a href="${verificationLink}" target="_blank">${verificationLink}</a></p>
+          <p>If you didn't request this, ignore it.</p>
+        `
+      };
+
+      try {
+        await transporter.sendMail(mailOptions);
+        console.log('📧 Verification email sent to:', email);
+      } catch (emailErr) {
+        console.error('❌ Failed to send verification email:', emailErr);
+        return res.status(500).json({ 
+          error: 'Failed to send verification email. Please try again later.',
+          details: emailErr.message 
+        });
+      }
+
+      return res.status(403).json({ 
+        error: 'Please verify your email before registering. A verification link has been sent to your email.',
+        verificationSent: true
+      });
+    }
+
+    // ✅ Email is verified, proceed with registration
+    console.log(`✅ User ${email} is verified. Creating account...`);
+
     await db.execute({
       sql: `INSERT INTO accounts 
             (username, email, password, role, liscense_plate, verified, slot_index_taken, location_taken) 
@@ -286,15 +300,23 @@ app.post('/api/auth/register', async (req, res) => {
 
     // ✅ Remove from pending_verifications
     await db.execute({
-  sql: 'DELETE FROM pending_verifications WHERE email = ?',
-  args: [email]
-});
-
+      sql: 'DELETE FROM pending_verifications WHERE email = ?',
+      args: [email]
+    });
 
     // ✅ Auto-login token
-    const token = jwt.sign({ username, email, role: 'user', liscense_plate }, process.env.JWT_SECRET, {
-      expiresIn: '24h'
-    });
+    const token = jwt.sign(
+      { 
+        username, 
+        email, 
+        role: 'user', 
+        liscense_plate,
+        slot_index_taken: null,
+        location_taken: null
+      }, 
+      process.env.JWT_SECRET, 
+      { expiresIn: '24h' }
+    );
 
     res.cookie('token', token, {
       httpOnly: true,
@@ -303,13 +325,13 @@ app.post('/api/auth/register', async (req, res) => {
       maxAge: 24 * 60 * 60 * 1000
     });
 
+    console.log(`✅ Account created successfully for ${email}`);
     res.json({ success: true, message: 'Account created and logged in automatically!' });
   } catch (err) {
     console.error('Registration error:', err);
     res.status(500).json({ error: 'Registration failed', details: err.message });
   }
 });
-
 
 
 
@@ -440,25 +462,21 @@ app.get('/api/auth/user', async (req, res) => {
 
 app.get('/test-email', async (req, res) => {
   try {
-    const { data, error } = await resend.emails.send({
-      from: 'onboarding@resend.dev', // Update with your verified domain
-      to: 'cts15throwaway@gmail.com', // Replace with your test email
+    const info = await transporter.sendMail({
+      from: `"Parking Web Test" <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_USER, // send to yourself first
       subject: '✅ Test Email from Parking Web',
-      html: '<p>If you got this, your Resend setup is working!</p>'
+      text: 'If you got this, your Gmail setup is working!',
     });
 
-    if (error) {
-      console.error('❌ Resend test failed:', error);
-      return res.status(500).send(`❌ Failed to send email: ${error.message}`);
-    }
-
-    console.log('Email sent:', data.id);
+    console.log('Email sent:', info.messageId);
     res.send('✅ Test email sent successfully!');
   } catch (err) {
     console.error('❌ Email test failed:', err);
     res.status(500).send(`❌ Failed to send email: ${err.message}`);
   }
 });
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
