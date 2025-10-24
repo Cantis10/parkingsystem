@@ -353,12 +353,10 @@ app.get('/', (req, res) => {
   const token = req.cookies?.token;
   if (!token) return res.redirect('/login');
 
-  try {
+
     jwt.verify(token, process.env.JWT_SECRET);
     return res.redirect('/home');
-  } catch {
-    return res.redirect('/login');
-  }
+ 
 });
 
 
