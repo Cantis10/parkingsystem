@@ -351,7 +351,7 @@ app.get('/api/auth/check', (req, res) => {
 // Root route
 app.get('/', (req, res) => {
   const token = req.cookies?.token;
-
+  if (!token) return res.redirect('/home');
 
 
     jwt.verify(token, process.env.JWT_SECRET);
