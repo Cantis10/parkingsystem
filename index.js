@@ -7,8 +7,6 @@ const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const { Resend } = require('resend');
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 require('dotenv').config();
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -76,22 +74,7 @@ app.get('/api/auth/verify/:token', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-//add mail transporter
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER, // Your Gmail
-    pass: process.env.EMAIL_PASS  // App password (not your login password)
-  },
-});
-
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 
 // Add session middleware with better configuration for Vercel
@@ -228,49 +211,43 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.post('/api/auth/request-verification', async (req, res) => {
   try {
+    console.log("test");
     const { email } = req.body;
-
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
     // Generate JWT token for verification
     const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
     const verificationLink = `${BASE_URL}/api/auth/verify/${encodeURIComponent(token)}`;
+    
     console.log('Verification token:', token);
     console.log('Verification link:', verificationLink);
 
-
-    // Send verification email
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    // Send verification email using Resend
+    const { data, error } = await resend.emails.send({
+      from: 'onboarding@resend.dev', // Update with your verified domain
       to: email,
       subject: 'Verify your email address',
       html: `
         <h2>Verify your email address</h2>
         <p>Click below to verify this email before registration:</p>
         <p><a href="${verificationLink}" target="_blank">${verificationLink}</a></p>
-        <p>If you didn’t request this, ignore it.</p>
+        <p>If you didn't request this, ignore it.</p>
       `
-    };
-
-    await resend.emails.send({
-      from: 'no-reply@yourapp.dev', // You can use any domain for now
-      to: email,
-      subject: 'Verify your email address',
-      html: `
-    <h2>Verify your email address</h2>
-    <p>Click below to verify this email before registration:</p>
-    <p><a href="${verificationLink}" target="_blank">${verificationLink}</a></p>
-    <p>If you didn’t request this, ignore it.</p>
-  `
     });
 
-    console.log('📧 Verification email sent to:', email);
+    if (error) {
+      console.error('Resend error:', error);
+      return res.status(500).json({ error: 'Failed to send verification email' });
+    }
+
+    console.log('📧 Verification email sent to:', email, 'ID:', data.id);
     res.json({ success: true, message: 'Verification email sent' });
   } catch (err) {
     console.error('Email send error:', err);
     res.status(500).json({ error: 'Failed to send verification email' });
   }
 });
+
 
 
 
@@ -309,9 +286,9 @@ app.post('/api/auth/register', async (req, res) => {
 
     // ✅ Remove from pending_verifications
     await db.execute({
-      sql: 'DELETE FROM pending_verifications WHERE email = ?',
-      args: [email]
-    });
+  sql: 'DELETE FROM pending_verifications WHERE email = ?',
+  args: [email]
+});
 
 
     // ✅ Auto-login token
@@ -463,22 +440,25 @@ app.get('/api/auth/user', async (req, res) => {
 
 app.get('/test-email', async (req, res) => {
   try {
-    const info = await resend.emails.send({
-      from: 'no-reply@yourapp.dev',
-      to: process.env.EMAIL_USER,
-      subject: '✅ Test Email from Parking Web (Resend)',
-      text: 'If you got this, your Resend setup is working!',
+    const { data, error } = await resend.emails.send({
+      from: 'onboarding@resend.dev', // Update with your verified domain
+      to: 'cts15throwaway@gmail.com', // Replace with your test email
+      subject: '✅ Test Email from Parking Web',
+      html: '<p>If you got this, your Resend setup is working!</p>'
     });
 
+    if (error) {
+      console.error('❌ Resend test failed:', error);
+      return res.status(500).send(`❌ Failed to send email: ${error.message}`);
+    }
 
-    console.log('Email sent:', info.messageId);
+    console.log('Email sent:', data.id);
     res.send('✅ Test email sent successfully!');
   } catch (err) {
     console.error('❌ Email test failed:', err);
     res.status(500).send(`❌ Failed to send email: ${err.message}`);
   }
 });
-
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({
