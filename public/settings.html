@@ -3,11 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Interactive Parking Map</title>
+  <title>Account Settings - Master Parker</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.3/themes/base/jquery-ui.css">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    body {
+      background-color: #f8f9fa;
+      padding-top: 80px;
+    }
+    .settings-container {
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .settings-card {
+      background: white;
+      border-radius: 10px;
+      padding: 30px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    .form-label {
+      font-weight: 600;
+      color: #495057;
+    }
+    .alert {
+      margin-top: 20px;
+    }
+    .form-control:disabled {
+      background-color: #f8f9fa;
+      color: #6c757d;
+      cursor: not-allowed;
+    }
+    .form-control:not(:disabled) {
+      color: #000;
+    }
+    .password-toggle {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      cursor: pointer;
+      color: #6c757d;
+      z-index: 10;
+    }
+    .password-toggle:hover {
+      color: #495057;
+    }
+    .password-wrapper {
+      position: relative;
+    }
+    #confirmPasswordGroup {
+      display: none;
+    }
+  </style>
 </head>
 <body>
 
@@ -22,16 +72,296 @@
     </div>
   </nav>
 
+  <div class="settings-container">
+    <div class="settings-card">
+      <h2 class="mb-4">Account Settings</h2>
+      <p class="text-muted mb-4">Update your account information. Current password is required to make changes.</p>
 
+      <div id="alertContainer"></div>
+
+      <form id="settingsForm">
+        <div class="mb-3">
+          <label for="currentPassword" class="form-label">Current Password *</label>
+          <div class="password-wrapper">
+            <input type="password" class="form-control" id="currentPassword" required>
+            <i class="fas fa-eye password-toggle" id="toggleCurrentPassword" style="display: none;"></i>
+          </div>
+          <small class="text-muted">Enter your password to unlock editing</small>
+        </div>
+
+        <button type="button" class="btn btn-secondary w-100 mb-4" id="editBtn" disabled>
+          <i class="fas fa-edit me-2"></i>Edit
+        </button>
+
+        <hr class="my-4">
+
+        <div class="mb-3">
+          <label for="newUsername" class="form-label">Username</label>
+          <input type="text" class="form-control" id="newUsername" disabled>
+        </div>
+
+        <div class="mb-3">
+          <label for="newPassword" class="form-label">New Password</label>
+          <div class="password-wrapper">
+            <input type="password" class="form-control" id="newPassword" placeholder="Leave blank to keep current" disabled>
+            <i class="fas fa-eye password-toggle" id="toggleNewPassword" style="display: none;"></i>
+          </div>
+        </div>
+
+        <div class="mb-3" id="confirmPasswordGroup">
+          <label for="confirmPassword" class="form-label">Confirm New Password</label>
+          <input type="password" class="form-control" id="confirmPassword" placeholder="Re-enter new password">
+        </div>
+
+        <div class="mb-3">
+          <label for="newLicensePlate" class="form-label">License Plate</label>
+          <input type="text" class="form-control" id="newLicensePlate" disabled>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 mt-3" id="updateBtn" disabled>
+          <i class="fas fa-save me-2"></i>Update Account
+        </button>
+      </form>
+    </div>
+  </div>
 
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://code.jquery.com/ui/1.13.3/jquery-ui.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
- 
-  </script>
+    // Load current user data
+    let originalUserData = {};
+    let isPasswordVerified = false;
+    
+    async function loadUserData() {
+      try {
+        const response = await fetch('/api/auth/user');
+        if (!response.ok) {
+          window.location.href = '/login';
+          return;
+        }
+        const user = await response.json();
+        originalUserData = {
+          username: user.username,
+          licensePlate: user.liscense_plate,
+          password: '' // We don't store actual password
+        };
+        
+        document.getElementById('newUsername').value = user.username;
+        document.getElementById('newLicensePlate').value = user.liscense_plate;
+      } catch (err) {
+        console.error('Error loading user data:', err);
+        showAlert('Failed to load user data', 'danger');
+      }
+    }
 
+    // Enable edit button when password is entered
+    $('#currentPassword').on('input', function() {
+      const hasPassword = $(this).val().length > 0;
+      $('#editBtn').prop('disabled', !hasPassword);
+      
+      // Show/hide eye icon for current password
+      if (hasPassword) {
+        $('#toggleCurrentPassword').show();
+      } else {
+        $('#toggleCurrentPassword').hide();
+      }
+    });
+
+    // Verify password and enable editing
+    $('#editBtn').on('click', async function() {
+      const currentPassword = $('#currentPassword').val();
+      const editBtn = $(this);
+      
+      editBtn.prop('disabled', true);
+      editBtn.html('<i class="fas fa-spinner fa-spin me-2"></i>Verifying...');
+      
+      try {
+        // Verify password by attempting to fetch user with password
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: originalUserData.email || (await (await fetch('/api/auth/user')).json()).email,
+            password: currentPassword
+          })
+        });
+
+        if (response.ok) {
+          isPasswordVerified = true;
+          
+          // Enable all fields
+          $('#newUsername, #newPassword, #newLicensePlate').prop('disabled', false);
+          $('#updateBtn').prop('disabled', false);
+          
+          // Show password toggle for new password
+          $('#toggleNewPassword').show();
+          
+          // Hide edit button and show success
+          editBtn.html('<i class="fas fa-check me-2"></i>Verified').addClass('btn-success').removeClass('btn-secondary');
+          setTimeout(() => {
+            editBtn.hide();
+          }, 1000);
+          
+          showAlert('Password verified! You can now edit your information.', 'success');
+        } else {
+          showAlert('Incorrect password. Please try again.', 'danger');
+          editBtn.prop('disabled', false);
+          editBtn.html('<i class="fas fa-edit me-2"></i>Edit');
+        }
+      } catch (err) {
+        console.error('Error verifying password:', err);
+        showAlert('Failed to verify password', 'danger');
+        editBtn.prop('disabled', false);
+        editBtn.html('<i class="fas fa-edit me-2"></i>Edit');
+      }
+    });
+
+    // Show/hide confirm password field when new password is entered
+    $('#newPassword').on('input', function() {
+      if ($(this).val().length > 0) {
+        $('#confirmPasswordGroup').slideDown();
+      } else {
+        $('#confirmPasswordGroup').slideUp();
+        $('#confirmPassword').val('');
+      }
+    });
+
+    // Toggle password visibility for current password
+    $('#toggleCurrentPassword').on('click', function() {
+      const passwordField = $('#currentPassword');
+      const type = passwordField.attr('type') === 'password' ? 'text' : 'password';
+      passwordField.attr('type', type);
+      
+      $(this).toggleClass('fa-eye fa-eye-slash');
+    });
+
+    // Toggle password visibility for new password
+    $('#toggleNewPassword').on('click', function() {
+      const passwordField = $('#newPassword');
+      const type = passwordField.attr('type') === 'password' ? 'text' : 'password';
+      passwordField.attr('type', type);
+      
+      $(this).toggleClass('fa-eye fa-eye-slash');
+    });
+
+    // Show alert message
+    function showAlert(message, type) {
+      const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+          ${message}
+          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+      `;
+      document.getElementById('alertContainer').innerHTML = alertHtml;
+      
+      // Auto-dismiss after 5 seconds
+      setTimeout(() => {
+        const alert = document.querySelector('.alert');
+        if (alert) {
+          const bsAlert = new bootstrap.Alert(alert);
+          bsAlert.close();
+        }
+      }, 5000);
+    }
+
+    // Handle form submission
+    document.getElementById('settingsForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      if (!isPasswordVerified) {
+        showAlert('Please verify your password first by clicking Edit', 'warning');
+        return;
+      }
+
+      const currentPassword = document.getElementById('currentPassword').value;
+      const newUsername = document.getElementById('newUsername').value.trim();
+      const newPassword = document.getElementById('newPassword').value.trim();
+      const confirmPassword = document.getElementById('confirmPassword').value.trim();
+      const newLicensePlate = document.getElementById('newLicensePlate').value.trim();
+
+      // Validate password confirmation if new password is provided
+      if (newPassword) {
+        if (!confirmPassword) {
+          showAlert('Please confirm your new password', 'warning');
+          return;
+        }
+        if (newPassword !== confirmPassword) {
+          showAlert('Passwords do not match', 'danger');
+          return;
+        }
+      }
+
+      // Check if any values actually changed
+      const usernameChanged = newUsername && newUsername !== originalUserData.username;
+      const passwordChanged = newPassword.length > 0;
+      const licensePlateChanged = newLicensePlate && newLicensePlate !== originalUserData.licensePlate;
+
+      if (!usernameChanged && !passwordChanged && !licensePlateChanged) {
+        showAlert('No changes detected', 'warning');
+        return;
+      }
+
+      const updateBtn = document.getElementById('updateBtn');
+      updateBtn.disabled = true;
+      updateBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Updating...';
+
+      try {
+        const response = await fetch('/api/account/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentPassword,
+            newUsername: usernameChanged ? newUsername : undefined,
+            newPassword: passwordChanged ? newPassword : undefined,
+            newLicensePlate: licensePlateChanged ? newLicensePlate : undefined
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          showAlert('Account updated successfully!', 'success');
+          
+          // Reload user data to show updated info
+          await loadUserData();
+          
+          // Clear password fields
+          document.getElementById('currentPassword').value = '';
+          document.getElementById('newPassword').value = '';
+          document.getElementById('confirmPassword').value = '';
+          
+          // Reset verification state
+          isPasswordVerified = false;
+          
+          // Disable fields again
+          $('#newUsername, #newPassword, #newLicensePlate').prop('disabled', true);
+          $('#confirmPasswordGroup').slideUp();
+          $('#toggleCurrentPassword, #toggleNewPassword').hide();
+          $('#editBtn').show().removeClass('btn-success').addClass('btn-secondary').prop('disabled', true);
+          $('#editBtn').html('<i class="fas fa-edit me-2"></i>Edit');
+          
+          // Redirect to home after 2 seconds
+          setTimeout(() => {
+            window.location.href = '/home';
+          }, 2000);
+        } else {
+          showAlert(data.error || 'Failed to update account', 'danger');
+          updateBtn.disabled = false;
+          updateBtn.innerHTML = '<i class="fas fa-save me-2"></i>Update Account';
+        }
+      } catch (err) {
+        console.error('Error updating account:', err);
+        showAlert('Network error. Please try again.', 'danger');
+        updateBtn.disabled = false;
+        updateBtn.innerHTML = '<i class="fas fa-save me-2"></i>Update Account';
+      }
+    });
+
+    // Load user data on page load
+    loadUserData();
+  </script>
 
 </body>
 </html>

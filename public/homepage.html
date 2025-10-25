@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Parker - Parking Management System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-black: #1a1a1a;
+            --secondary-gray: #4a4a4a;
+            --light-gray: #f5f5f5;
+            --border-gray: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: var(--primary-black);
+            background-color: white;
+        }
+
+        .hero-section {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: var(--primary-black);
+            color: white;
+            position: relative;
+        }
+
+        .hero-content {
+            text-align: center;
+            padding: 2rem;
+            max-width: 800px;
+        }
+
+        .hero-title {
+            font-size: 3.5rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+            opacity: 0;
+        }
+
+        .hero-subtitle {
+            font-size: 1.3rem;
+            margin-bottom: 2.5rem;
+            color: #d1d5db;
+            opacity: 0;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            opacity: 0;
+        }
+
+        .btn-hero {
+            padding: 0.875rem 2rem;
+            font-size: 1rem;
+            border-radius: 0;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+            border: 2px solid white;
+        }
+
+        .btn-primary-hero {
+            background: white;
+            color: var(--primary-black);
+        }
+
+        .btn-primary-hero:hover {
+            background: var(--primary-black);
+            color: white;
+        }
+
+        .btn-secondary-hero {
+            background: transparent;
+            color: white;
+        }
+
+        .btn-secondary-hero:hover {
+            background: white;
+            color: var(--primary-black);
+        }
+
+        .features-section {
+            padding: 5rem 2rem;
+            background: white;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 3rem;
+            color: var(--primary-black);
+        }
+
+        .feature-card {
+            padding: 2rem;
+            background: white;
+            border: 2px solid var(--border-gray);
+            transition: all 0.3s ease;
+            height: 100%;
+            margin-bottom: 2rem;
+        }
+
+        .feature-card:hover {
+            border-color: var(--primary-black);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .feature-icon {
+            width: 60px;
+            height: 60px;
+            background: var(--primary-black);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+            color: white;
+        }
+
+        .feature-title {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--primary-black);
+        }
+
+        .feature-description {
+            color: var(--secondary-gray);
+            line-height: 1.6;
+        }
+
+        .how-it-works {
+            padding: 5rem 2rem;
+            background: var(--light-gray);
+        }
+
+        .step-card {
+            text-align: center;
+            padding: 2rem 1rem;
+        }
+
+        .step-number {
+            width: 50px;
+            height: 50px;
+            background: var(--primary-black);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0 auto 1.5rem;
+        }
+
+        .step-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--primary-black);
+        }
+
+        .footer {
+            background: var(--primary-black);
+            color: white;
+            padding: 3rem 2rem 1rem;
+        }
+
+        .footer-section {
+            margin-bottom: 2rem;
+        }
+
+        .footer-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
+
+        .footer-link {
+            color: #d1d5db;
+            text-decoration: none;
+            display: block;
+            margin-bottom: 0.5rem;
+            transition: color 0.3s;
+        }
+
+        .footer-link:hover {
+            color: white;
+        }
+
+        .footer-bottom {
+            border-top: 1px solid #374151;
+            padding-top: 1.5rem;
+            margin-top: 2rem;
+            text-align: center;
+            color: #9ca3af;
+        }
+
+        @media (max-width: 768px) {
+            .hero-title {
+                font-size: 2.5rem;
+            }
+            .hero-subtitle {
+                font-size: 1.1rem;
+            }
+            .section-title {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section class="hero-section">
+        <div class="hero-content">
+            <h1 class="hero-title">
+                <i class="fas fa-parking"></i> Master Parker
+            </h1>
+            <p class="hero-subtitle">
+                Parking Management System for Master Parker Locations
+            </p>
+            <div class="cta-buttons">
+                <a href="/home" class="btn-hero btn-primary-hero">
+                    <i class="fas fa-building"></i> View Locations
+                </a>
+                <a href="/login" class="btn-hero btn-secondary-hero">
+                    <i class="fas fa-sign-in-alt"></i> Sign In
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features-section">
+        <div class="container">
+            <h2 class="section-title">What We Offer</h2>
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-map-marked-alt"></i>
+                        </div>
+                        <h3 class="feature-title">Multiple Locations</h3>
+                        <p class="feature-description">
+                            Access parking spaces across all Master Parker owned locations with a single account.
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-layer-group"></i>
+                        </div>
+                        <h3 class="feature-title">Floor Navigation</h3>
+                        <p class="feature-description">
+                            View and navigate parking spaces by floor at multi-level locations.
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <h3 class="feature-title">Space Availability</h3>
+                        <p class="feature-description">
+                            Check current availability and pricing for each Master Parker location.
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-calendar-alt"></i>
+                        </div>
+                        <h3 class="feature-title">Reserve Spaces</h3>
+                        <p class="feature-description">
+                            Reserve parking spaces at our locations with your registered license plate.
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-user-shield"></i>
+                        </div>
+                        <h3 class="feature-title">Account Management</h3>
+                        <p class="feature-description">
+                            Manage your reservations and view your parking history in one place.
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon">
+                            <i class="fas fa-dollar-sign"></i>
+                        </div>
+                        <h3 class="feature-title">Clear Pricing</h3>
+                        <p class="feature-description">
+                            View pricing information for each parking space before making a reservation.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section class="how-it-works">
+        <div class="container">
+            <h2 class="section-title">How It Works</h2>
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="step-card">
+                        <div class="step-number">1</div>
+                        <h3 class="step-title">Register</h3>
+                        <p class="feature-description">
+                            Create an account with your email and license plate number.
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="step-card">
+                        <div class="step-number">2</div>
+                        <h3 class="step-title">Browse</h3>
+                        <p class="feature-description">
+                            View available spaces at Master Parker locations.
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="step-card">
+                        <div class="step-number">3</div>
+                        <h3 class="step-title">Reserve</h3>
+                        <p class="feature-description">
+                            Select and reserve a parking space for your desired duration.
+                        </p>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="step-card">
+                        <div class="step-number">4</div>
+                        <h3 class="step-title">Park</h3>
+                        <p class="feature-description">
+                            Arrive at your reserved space at the designated Master Parker location.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-4 footer-section">
+                    <h4 class="footer-title">Master Parker</h4>
+                    <p class="feature-description" style="color: #d1d5db;">
+                        Parking management system for Master Parker owned locations.
+                    </p>
+                </div>
+                <div class="col-md-4 footer-section">
+                    <h4 class="footer-title">Quick Links</h4>
+                    <a href="/home" class="footer-link">View Locations</a>
+                    <a href="/login" class="footer-link">Sign In</a>
+                    <a href="/login" class="footer-link">Register</a>
+                </div>
+                <div class="col-md-4 footer-section">
+                    <h4 class="footer-title">Contact</h4>
+                    <p class="feature-description" style="color: #d1d5db;">
+                        <i class="fas fa-envelope"></i> info@masterparker.com<br>
+                        <i class="fas fa-phone"></i> Contact your location
+                    </p>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2025 Master Parker. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Fade in animations
+            $('.hero-title').delay(200).animate({ opacity: 1 }, 800);
+            $('.hero-subtitle').delay(400).animate({ opacity: 1 }, 800);
+            $('.cta-buttons').delay(600).animate({ opacity: 1 }, 800);
+
+            // Smooth scroll for internal links
+            $('a[href^="#"]').on('click', function(e) {
+                e.preventDefault();
+                var target = $(this.getAttribute('href'));
+                if (target.length) {
+                    $('html, body').stop().animate({
+                        scrollTop: target.offset().top - 70
+                    }, 1000);
+                }
+            });
+
+            // Feature cards hover effect
+            $('.feature-card').hover(
+                function() {
+                    $(this).stop().animate({ 
+                        marginTop: '-5px',
+                        marginBottom: '5px'
+                    }, 200);
+                },
+                function() {
+                    $(this).stop().animate({ 
+                        marginTop: '0',
+                        marginBottom: '2rem'
+                    }, 200);
+                }
+            );
+        });
+    </script>
+</body>
+</html>

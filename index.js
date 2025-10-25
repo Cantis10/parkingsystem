@@ -123,6 +123,10 @@ app.get('/map', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'map.html'));
 });
 
+app.get('/settings', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+});
+
 // Auth middleware
 function requireAuth(req, res, next) {
   const token = req.cookies?.token;
@@ -182,7 +186,7 @@ app.post('/api/auth/login', async (req, res) => {
 
   try {
     const result = await db.execute({
-      sql: 'SELECT * FROM accounts WHERE email = ? AND password = ?',
+      sql: 'SELECT * FROM accounts WHERE LOWER(email) = LOWER(?) AND password = ?',
       args: [email, password]
     });
 
@@ -257,7 +261,7 @@ app.post('/api/auth/register', async (req, res) => {
     // If not verified, send verification email
     if (verification.rows.length === 0 || !verification.rows[0].verified) {
       console.log(`📧 User ${email} not verified. Sending verification email...`);
-      
+
       // Generate JWT token for verification
       const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
       const verificationLink = `${BASE_URL}/api/auth/verify/${encodeURIComponent(token)}`;
@@ -280,13 +284,13 @@ app.post('/api/auth/register', async (req, res) => {
         console.log('📧 Verification email sent to:', email);
       } catch (emailErr) {
         console.error('❌ Failed to send verification email:', emailErr);
-        return res.status(500).json({ 
+        return res.status(500).json({
           error: 'Failed to send verification email. Please try again later.',
-          details: emailErr.message 
+          details: emailErr.message
         });
       }
 
-      return res.status(403).json({ 
+      return res.status(403).json({
         error: 'Please verify your email before registering. A verification link has been sent to your email.',
         verificationSent: true
       });
@@ -310,15 +314,15 @@ app.post('/api/auth/register', async (req, res) => {
 
     // ✅ Auto-login token
     const token = jwt.sign(
-      { 
-        username, 
-        email, 
-        role: 'user', 
+      {
+        username,
+        email,
+        role: 'user',
         liscense_plate,
         slot_index_taken: null,
         location_taken: null
-      }, 
-      process.env.JWT_SECRET, 
+      },
+      process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
 
@@ -351,12 +355,12 @@ app.get('/api/auth/check', (req, res) => {
 // Root route
 app.get('/', (req, res) => {
   const token = req.cookies?.token;
-  if (!token) return res.redirect('/home');
+  if (!token) return res.redirect('/homepage');
 
 
-    jwt.verify(token, process.env.JWT_SECRET);
-    return res.redirect('/home');
- 
+  jwt.verify(token, process.env.JWT_SECRET);
+  return res.redirect('/home');
+
 });
 
 
@@ -438,6 +442,115 @@ app.post('/api/admin/parking/update', async (req, res) => {
   } catch (err) {
     console.error('Error updating parking space:', err);
     res.status(500).json({ error: 'Failed to update parking space', details: err.message });
+  }
+});
+
+// Update account settings endpoint
+app.post('/api/account/update', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { currentPassword, newUsername, newPassword, newLicensePlate } = req.body;
+
+  if (!currentPassword) {
+    return res.status(400).json({ error: 'Current password is required to make changes' });
+  }
+
+  // Validate that at least one field is being updated
+  if (!newUsername && !newPassword && !newLicensePlate) {
+    return res.status(400).json({ error: 'At least one field must be provided to update' });
+  }
+
+  try {
+    // Verify current password
+    const verifyResult = await db.execute({
+      sql: 'SELECT * FROM accounts WHERE email = ? AND password = ?',
+      args: [user.email, currentPassword]
+    });
+
+    if (verifyResult.rows.length === 0) {
+      return res.status(403).json({ error: 'Current password is incorrect' });
+    }
+
+    // Check if new username already exists (if username is being changed)
+    if (newUsername && newUsername !== user.username) {
+      const usernameCheck = await db.execute({
+        sql: 'SELECT * FROM accounts WHERE username = ? AND email != ?',
+        args: [newUsername, user.email]
+      });
+
+      if (usernameCheck.rows.length > 0) {
+        return res.status(409).json({ error: 'Username already taken' });
+      }
+    }
+
+    // Build dynamic update query
+    const updates = [];
+    const args = [];
+
+    if (newUsername) {
+      updates.push('username = ?');
+      args.push(newUsername);
+    }
+
+    if (newPassword) {
+      updates.push('password = ?');
+      args.push(newPassword);
+    }
+
+    if (newLicensePlate) {
+      updates.push('liscense_plate = ?');
+      args.push(newLicensePlate);
+    }
+
+    args.push(user.email);
+
+    await db.execute({
+      sql: `UPDATE accounts SET ${updates.join(', ')} WHERE email = ?`,
+      args: args
+    });
+
+    // Generate new token with updated information
+    const updatedResult = await db.execute({
+      sql: 'SELECT * FROM accounts WHERE email = ?',
+      args: [user.email]
+    });
+
+    const updatedUser = updatedResult.rows[0];
+    const newToken = jwt.sign(
+      {
+        username: updatedUser.username,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        liscense_plate: updatedUser.liscense_plate,
+        slot_index_taken: updatedUser.slot_index_taken,
+        location_taken: updatedUser.location_taken
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '24h' }
+    );
+
+    res.cookie('token', newToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 24 * 60 * 60 * 1000
+    });
+
+    res.json({
+      success: true,
+      message: 'Account updated successfully',
+      updated: {
+        username: !!newUsername,
+        password: !!newPassword,
+        licensePlate: !!newLicensePlate
+      }
+    });
+  } catch (err) {
+    console.error('Error updating account:', err);
+    res.status(500).json({ error: 'Failed to update account', details: err.message });
   }
 });
 
