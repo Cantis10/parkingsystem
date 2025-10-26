@@ -127,6 +127,11 @@ app.get('/settings', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'settings.html'));
 });
 
+app.get('/homepage', requireAuth, (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'homepage.html'));
+});
+
+
 // Auth middleware
 function requireAuth(req, res, next) {
   const token = req.cookies?.token;
