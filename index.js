@@ -156,20 +156,41 @@ function getUserFromToken(req) {
   }
 }
 
+// ...existing code...
 app.get('/api/locations', async (req, res) => {
   try {
-    const result = await db.execute('SELECT * FROM locations');
+    // Fetch all locations
+    const locationsResult = await db.execute('SELECT * FROM locations');
+    const locations = locationsResult.rows;
 
-    const locations = result.rows.map(row => ({
+    // Fetch available counts grouped by location_index in one query
+    const countsResult = await db.execute({
+      sql: `SELECT location_index, COUNT(*) as available_count
+            FROM parking_spaces
+            WHERE state = ?
+            GROUP BY location_index`,
+      args: ['available']
+    });
+
+    // Build a map of location_index -> available_count
+    const countsMap = {};
+    countsResult.rows.forEach(row => {
+      // ensure numeric type
+      countsMap[String(row.location_index)] = Number(row.available_count) || 0;
+    });
+
+    // Merge counts into locations response
+    const response = locations.map(row => ({
       id: row.id,
       imageIndex: row.image_index,
-      currentAvailable: row.current_available,
+      // live count based on parking_spaces state === 'available'
+      currentAvailable: countsMap[String(row.id)] || 0,
       addressLocation: row.adress_location,
       averagePrice: row.avarage_price,
       redirect: '/map'
     }));
 
-    res.json(locations);
+    res.json(response);
   } catch (err) {
     console.error('Error fetching locations:', err);
     res.status(500).json({ error: 'Failed to fetch locations', details: err.message });
@@ -229,6 +250,94 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+app.get('/api/admin/overdue/:location_id', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+
+  const locationId = req.params.location_id;
+
+  if (user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin privileges required' });
+  }
+  if (user.location_index_admin && parseInt(user.location_index_admin) !== parseInt(locationId)) {
+    return res.status(403).json({ error: 'Admin does not manage this location' });
+  }
+
+  try {
+    // select expiry as ISO string and only return spaces that are occupied and whose allowed occupancy window has passed
+    const result = await db.execute({
+      sql: `
+        SELECT
+          id,
+          "index",
+          location_index,
+          state,
+          is_occupied,
+          plate,
+          days_to_occupy,
+          last_update,
+          datetime(last_update, '+' || days_to_occupy || ' days') AS expiry,
+          location_x,
+          location_y,
+          width,
+          height,
+          floor,
+          price,
+          exclusive,
+          restriction_start,
+          restriction_end,
+          restriction_frequency
+        FROM parking_spaces
+        WHERE location_index = ?
+          AND (is_occupied = 1 OR state != 'available')
+          AND days_to_occupy IS NOT NULL
+          AND days_to_occupy > 0
+          AND datetime(last_update, '+' || days_to_occupy || ' days') <= datetime('now')
+        ORDER BY expiry ASC
+      `,
+      args: [locationId]
+    });
+
+    const overdue = (result.rows || []).map(row => {
+      const mapped = {
+        id: row.id,
+        index: row.index,
+        locationIndex: row.location_index,
+        state: row.state,
+        isOccupied: !!row.is_occupied,
+        plate: row.plate,
+        daysToOccupy: row.days_to_occupy,
+        lastUpdate: row.last_update,
+        expiry: row.expiry, // ISO-like string from sqlite/datetime
+        floor: row.floor,
+        locationX: row.location_x,
+        locationY: row.location_y,
+        sizeX: row.width,
+        sizeY: row.height,
+        exclusive: row.exclusive,
+        price: row.price,
+        restrictionStart: row.restriction_start,
+        restrictionEnd: row.restriction_end,
+        restrictionFrequency: row.restriction_frequency
+      };
+
+      // Log each overdue space to the terminal (TIME format example: 2025-10-24T10:47:03.409Z)
+      try {
+        const nowIso = new Date().toISOString();
+        console.log(`[OVERDUE] ${nowIso} location=${locationId} space_index=${mapped.index} plate=${mapped.plate || 'N/A'} last_update=${mapped.lastUpdate} expiry=${mapped.expiry}`);
+      } catch (e) {
+        console.log('[OVERDUE] (failed to format log) location=', locationId, 'space_index=', mapped.index);
+      }
+
+      return mapped;
+    });
+
+    res.json(overdue);
+  } catch (err) {
+    console.error('Error fetching overdue parking spaces:', err);
+    res.status(500).json({ error: 'Failed to fetch overdue list', details: err.message });
+  }
+});
 
 // Logout endpoint
 app.post('/api/auth/logout', (req, res) => {

@@ -51,6 +51,37 @@
       font-weight: bold;
       z-index: 1000;
     }
+
+    .overdue-panel {
+      position: fixed;
+      right: 20px;
+      top: 160px;
+      width: 320px;
+      max-height: 60vh;
+      overflow-y: auto;
+      background: #fff;
+      border: 1px solid #ddd;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+      border-radius: 8px;
+      z-index: 1100;
+      padding: 10px;
+    }
+    .overdue-panel h6 {
+      margin: 0 0 8px 0;
+      font-weight: 700;
+    }
+    .overdue-item {
+      cursor: pointer;
+    }
+    .overdue-item .meta {
+      font-size: 0.85rem;
+      color: #555;
+    }
+    .overdue-empty {
+      color: #666;
+      text-align: center;
+      padding: 12px 6px;
+    }
   </style>
 </head>
 <body>
@@ -69,6 +100,13 @@
 
   <div class="admin-badge">
     <i class="fas fa-user-shield"></i> Admin Mode
+  </div>
+
+    <div id="overdue-feed" class="overdue-panel">
+    <h6>Overdue Queue</h6>
+    <ul id="overdue-list" class="list-group list-group-flush">
+      <li class="list-group-item overdue-empty">Loading...</li>
+    </ul>
   </div>
 
   <div class="mapContainer">
@@ -96,201 +134,321 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-    $(document).ready(function() {
-      const urlParams = new URLSearchParams(window.location.search);
-      const locationId = urlParams.get('location_id');
+  $(document).ready(function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const locationId = urlParams.get('location_id');
 
-      if (!locationId) {
-        alert('No location selected. Redirecting to home.');
+    if (!locationId) {
+      alert('No location selected. Redirecting to home.');
+      window.location.href = '/home';
+      return;
+    }
+
+    let mapData = { maps: [], floors: [] };
+    let parkingSpaces = [];
+    let currentFloorIndex = 0;
+    let activeContainerSelector = '#map-container-1';
+    let overduePollInterval = null;
+
+    // Verify admin access
+    $.ajax({
+      url: '/api/auth/user',
+      method: 'GET'
+    }).done(function(userData) {
+      if (userData.role !== 'admin' || parseInt(userData.location_index_admin) !== parseInt(locationId)) {
+        alert('Access denied. Admin privileges required for this location.');
         window.location.href = '/home';
+      }
+    }).fail(function() {
+      alert('Authentication failed.');
+      window.location.href = '/login';
+    });
+
+    function fetchMaps(callback) {
+      $.ajax({
+        url: `/api/maps/${locationId}`,
+        method: 'GET',
+        success: function(data) {
+          // data is array of { floor, floorsImageIndex, ... }
+          mapData.maps = (data || []).map(m => `/images/map/${m.floorsImageIndex}`);
+          mapData.floors = (data || []).map(m => m.floor);
+          if (callback) callback();
+        },
+        error: function(xhr) {
+          console.error('Failed to fetch maps:', xhr);
+          alert('Failed to load maps for this location.');
+        }
+      });
+    }
+
+    function fetchParkingSpaces(callback) {
+      $.ajax({
+        url: `/api/parking/${locationId}`,
+        method: 'GET',
+        success: function(data) {
+          parkingSpaces = data || [];
+          if (callback) callback();
+        },
+        error: function(xhr) {
+          console.error('Failed to fetch parking spaces:', xhr);
+        }
+      });
+    }
+
+    function loadFloor(index, containerSelector) {
+      if (!mapData.floors || mapData.floors.length === 0) return;
+
+      const floor = mapData.floors[index];
+      const $container = $(containerSelector);
+
+      // set image if available, else keep existing
+      if (mapData.maps[index]) {
+        $container.find('.map-image').attr('src', mapData.maps[index]);
+      }
+      $('#floor-display').text(`Floor: ${floor}`);
+
+      $container.find('.parking-space').remove();
+
+      parkingSpaces
+        .filter(space => String(space.floor) === String(floor))
+        .forEach(space => {
+          const top = (String(space.locationY).includes('%')) ? space.locationY : `${space.locationY}%`;
+          const left = (String(space.locationX).includes('%')) ? space.locationX : `${space.locationX}%`;
+          const width = (String(space.sizeX).includes('%')) ? space.sizeX : `${space.sizeX}%`;
+          const height = (String(space.sizeY).includes('%')) ? space.sizeY : `${space.sizeY}%`;
+
+          const $space = $('<div>', {
+            class: `parking-space state-${space.state}`,
+            'data-index': space.index,
+            title: `#${space.index} · ${space.plate || 'N/A'} · ${space.state}`
+          }).css({
+            position: 'absolute',
+            top,
+            left,
+            width,
+            height
+          });
+
+          $container.append($space);
+        });
+
+      $container.find('.parking-space').tooltip({
+        content: function() { return $(this).prop('title'); }
+      });
+
+      updateButtonStates();
+    }
+
+    function updateButtonStates() {
+      $('#floor-up').prop('disabled', currentFloorIndex >= (mapData.floors.length - 1));
+      $('#floor-down').prop('disabled', currentFloorIndex <= 0);
+    }
+
+    function fetchOverdueFeed() {
+      $.ajax({
+        url: `/api/admin/overdue/${locationId}`,
+        method: 'GET',
+        success: function(data) {
+          renderOverdueList(data);
+          highlightOverdueOnMap(data);
+        },
+        error: function(xhr) {
+          console.error('Failed to fetch overdue feed:', xhr);
+          $('#overdue-list').html('<li class="list-group-item overdue-empty">Failed to load</li>');
+        }
+      });
+    }
+
+    function renderOverdueList(items) {
+      const $list = $('#overdue-list');
+      $list.empty();
+
+      if (!items || items.length === 0) {
+        $list.append('<li class="list-group-item overdue-empty">No overdue parkers</li>');
         return;
       }
 
-      let mapData = { maps: [], floors: [] };
-      let parkingSpaces = [];
-      let currentFloorIndex = 0;
-      let activeContainerSelector = '#map-container-1';
+      const now = new Date();
+      items.forEach(item => {
+        // item.expiry may be ISO or sqlite datetime string; try parsing
+        const expiry = item.expiry ? new Date(item.expiry) : null;
+        const overdueDays = expiry ? Math.floor((now - expiry) / (1000 * 60 * 60 * 24)) : 0;
+        const overdueLabel = overdueDays > 0 ? `${overdueDays}d overdue` : 'Due today';
 
-      // Verify admin access
-      $.ajax({
-        url: '/api/auth/user',
-        method: 'GET',
-        success: function(userData) {
-          if (userData.role !== 'admin' || parseInt(userData.location_index_admin) !== parseInt(locationId)) {
-            alert('Access denied. Admin privileges required for this location.');
-            window.location.href = '/home';
-          }
-        },
-        error: function() {
-          alert('Authentication failed.');
-          window.location.href = '/login';
+        const $li = $(`
+          <li class="list-group-item overdue-item" data-index="${item.index}">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <strong>Space #${item.index}</strong>
+                <div class="meta">Plate: ${item.plate || 'N/A'} · Floor: ${item.floor ?? '--'}</div>
+              </div>
+              <div class="text-end">
+                <div class="badge bg-danger">${overdueLabel}</div>
+                <div class="meta" style="margin-top:6px;">${item.lastUpdate ? new Date(item.lastUpdate).toLocaleString() : '--'}</div>
+              </div>
+            </div>
+          </li>
+        `);
+
+        $list.append($li);
+      });
+    }
+
+    function highlightOverdueOnMap(items) {
+      // Clear previous highlights
+      $('.parking-space').each(function() {
+        $(this).css({
+          'box-shadow': '',
+          'border-color': ''
+        });
+      });
+
+      if (!items || items.length === 0) return;
+
+      items.forEach(item => {
+        const selector = `.parking-space[data-index="${item.index}"]`;
+        const $el = $(selector);
+        if ($el.length) {
+          $el.css({
+            'box-shadow': '0 0 12px 4px rgba(255,0,0,0.45)',
+            'border-color': '#ff0000'
+          });
         }
       });
+    }
 
-      function fetchMaps(callback) {
-        $.ajax({
-          url: `/api/maps/${locationId}`,
-          method: 'GET',
-          success: function(data) {
-            mapData.maps = data.map(m => `/images/map/${m.floorsImageIndex}`);
-            mapData.floors = data.map(m => m.floor);
-            if (callback) callback();
-          },
-          error: function(xhr) {
-            console.error('Failed to fetch maps:', xhr);
-            alert('Failed to load maps for this location.');
-          }
-        });
-      }
-
-      function fetchParkingSpaces(callback) {
-        $.ajax({
-          url: `/api/parking/${locationId}`,
-          method: 'GET',
-          success: function(data) {
-            parkingSpaces = data;
-            if (callback) callback();
-          },
-          error: function(xhr) {
-            console.error('Failed to fetch parking spaces:', xhr);
-          }
-        });
-      }
-
-      function loadFloor(index, containerSelector) {
-        if (mapData.floors.length === 0) return;
-
-        const floor = mapData.floors[index];
-        const $container = $(containerSelector);
-
-        $container.find('.map-image').attr('src', mapData.maps[index]);
-        $('#floor-display').text(`Floor: ${floor}`);
-
-        $container.find('.parking-space').remove();
-
-        parkingSpaces
-          .filter(space => space.floor === floor)
-          .forEach(space => {
-            const spaceDiv = $('<div>', {
-              'class': `parking-space state-${space.state}`,
-              'data-index': space.index,
-              'title': `Space #${space.index} | State: ${space.state} | Type: ${space.feature} | Price: PHP ${parseFloat(space.price).toFixed(2)}`
-            }).css({
-              top: `${space.locationY}%`,
-              left: `${space.locationX}%`,
-              width: `${space.sizeX}%`,
-              height: `${space.sizeY}%`
-            });
-
-            $container.append(spaceDiv);
-          });
-
-        $container.find('.parking-space').tooltip({
-          content: function () { return $(this).prop('title'); }
-        });
-
-        updateButtonStates();
-      }
-
-      function updateButtonStates() {
-        $('#floor-up').prop('disabled', currentFloorIndex >= mapData.floors.length - 1);
-        $('#floor-down').prop('disabled', currentFloorIndex <= 0);
-      }
-
-      $('#floor-up').on('click', function() {
-        if (currentFloorIndex >= mapData.floors.length - 1) return;
-        const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
-        currentFloorIndex++;
-        loadFloor(currentFloorIndex, newContainer);
-        $(activeContainerSelector).hide();
-        $(newContainer).show();
-        activeContainerSelector = newContainer;
-      });
-
-      $('#floor-down').on('click', function() {
-        if (currentFloorIndex <= 0) return;
-        const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
-        currentFloorIndex--;
-        loadFloor(currentFloorIndex, newContainer);
-        $(activeContainerSelector).hide();
-        $(newContainer).show();
-        activeContainerSelector = newContainer;
-      });
-
-      $('#map-wrapper').on('click', '.parking-space', function () {
-        const idx = $(this).data('index');
-        const space = parkingSpaces.find(s => s.index == idx);
-        if (!space) return;
-
-        // Populate modal with current values
-        $('#edit-index').val(space.index);
-        $('#edit-location-x').val(space.locationX);
-        $('#edit-location-y').val(space.locationY);
-        $('#edit-width').val(space.sizeX);
-        $('#edit-height').val(space.sizeY);
-        $('#edit-floor').val(space.floor);
-        $('#edit-price').val(space.price);
-        $('#edit-state').val(space.state);
-        $('#edit-exclusive').val(space.feature);
-        $('#edit-plate').val(space.plate || '');
-        $('#edit-days').val(space.daysToOccupy || 0);
-        $('#edit-restriction-start').val(space.restrictionStart || '');
-        $('#edit-restriction-end').val(space.restrictionEnd || '');
-        $('#edit-restriction-frequency').val(space.restrictionFrequency || 0);
-
+    // click an overdue item -> open admin modal for that space
+    $('#overdue-list').on('click', '.overdue-item', function() {
+      const idx = $(this).data('index');
+      const space = parkingSpaces.find(s => String(s.index) === String(idx));
+      if (space) {
+        populateAdminModal(space);
         $('#adminEditModal').modal('show');
-      });
+        return;
+      }
 
-      $('#admin-save').on('click', function (e) {
-        e.preventDefault();
-
-        const updatedSpace = {
-          index: $('#edit-index').val(),
-          location_x: parseInt($('#edit-location-x').val(), 10),
-          location_y: parseInt($('#edit-location-y').val(), 10),
-          width: parseInt($('#edit-width').val(), 10),
-          height: parseInt($('#edit-height').val(), 10),
-          floor: parseInt($('#edit-floor').val(), 10),
-          price: parseFloat($('#edit-price').val()),
-          state: $('#edit-state').val(),
-          exclusive: $('#edit-exclusive').val(),
-          plate: $('#edit-plate').val() || null,
-          days_to_occupy: parseInt($('#edit-days').val(), 10) || 0,
-          restriction_start: $('#edit-restriction-start').val() || null,
-          restriction_end: $('#edit-restriction-end').val() || null,
-          restriction_frequency: parseInt($('#edit-restriction-frequency').val(), 10) || 0
-        };
-
-        $.ajax({
-          url: '/api/admin/parking/update',
-          method: 'POST',
-          contentType: 'application/json',
-          data: JSON.stringify(updatedSpace),
-          success: function () {
-            alert('Parking space updated successfully!');
-            fetchParkingSpaces(function() {
-              loadFloor(currentFloorIndex, activeContainerSelector);
-              $('#adminEditModal').modal('hide');
-            });
-          },
-          error: function (xhr) {
-            alert('Failed to update parking space: ' + (xhr.responseJSON?.error || 'Unknown error'));
-          }
-        });
-      });
-
-      // Initialize
-      fetchMaps(function() {
-        fetchParkingSpaces(function() {
-          if (mapData.floors.length > 0) {
-            loadFloor(currentFloorIndex, activeContainerSelector);
-          } else {
-            alert('No maps available for this location.');
-          }
-        });
+      // fallback: refetch spaces then open
+      fetchParkingSpaces(function() {
+        const space2 = parkingSpaces.find(s => String(s.index) === String(idx));
+        if (space2) {
+          populateAdminModal(space2);
+          $('#adminEditModal').modal('show');
+          return;
+        }
+        alert('Space not found');
       });
     });
-  </script>
+
+    function populateAdminModal(space) {
+      $('#edit-index').val(space.index);
+      $('#edit-location-x').val(space.locationX);
+      $('#edit-location-y').val(space.locationY);
+      $('#edit-width').val(space.sizeX);
+      $('#edit-height').val(space.sizeY);
+      $('#edit-floor').val(space.floor);
+      $('#edit-price').val(space.price);
+      $('#edit-state').val(space.state);
+      $('#edit-exclusive').val(space.feature);
+      $('#edit-plate').val(space.plate || '');
+      $('#edit-days').val(space.daysToOccupy || 0);
+      $('#edit-restriction-start').val(space.restrictionStart || '');
+      $('#edit-restriction-end').val(space.restrictionEnd || '');
+      $('#edit-restriction-frequency').val(space.restrictionFrequency || 0);
+    }
+
+    // click on a parking space in the map -> open modal
+    $('#map-wrapper').on('click', '.parking-space', function() {
+      const idx = $(this).data('index');
+      const space = parkingSpaces.find(s => String(s.index) === String(idx));
+      if (!space) return;
+      populateAdminModal(space);
+      $('#adminEditModal').modal('show');
+    });
+
+    // floor controls
+    $('#floor-up').on('click', function() {
+      if (currentFloorIndex >= mapData.floors.length - 1) return;
+      const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
+      currentFloorIndex++;
+      loadFloor(currentFloorIndex, newContainer);
+      $(activeContainerSelector).hide();
+      $(newContainer).show();
+      activeContainerSelector = newContainer;
+    });
+
+    $('#floor-down').on('click', function() {
+      if (currentFloorIndex <= 0) return;
+      const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
+      currentFloorIndex--;
+      loadFloor(currentFloorIndex, newContainer);
+      $(activeContainerSelector).hide();
+      $(newContainer).show();
+      activeContainerSelector = newContainer;
+    });
+
+    // Admin save handler already present in page; ensure after save we refresh spaces & map
+    $('#admin-save').off('click').on('click', function(e) {
+      e.preventDefault();
+
+      const updatedSpace = {
+        index: $('#edit-index').val(),
+        location_x: parseFloat($('#edit-location-x').val()),
+        location_y: parseFloat($('#edit-location-y').val()),
+        width: parseFloat($('#edit-width').val()),
+        height: parseFloat($('#edit-height').val()),
+        floor: parseInt($('#edit-floor').val(), 10),
+        price: parseFloat($('#edit-price').val()),
+        state: $('#edit-state').val(),
+        exclusive: $('#edit-exclusive').val(),
+        plate: $('#edit-plate').val() || null,
+        days_to_occupy: parseInt($('#edit-days').val(), 10) || 0,
+        restriction_start: $('#edit-restriction-start').val() || null,
+        restriction_end: $('#edit-restriction-end').val() || null,
+        restriction_frequency: parseInt($('#edit-restriction-frequency').val(), 10) || 0
+      };
+
+      $.ajax({
+        url: '/api/admin/parking/update',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(updatedSpace),
+        success: function() {
+          fetchParkingSpaces(function() {
+            // reload current floor into active container
+            loadFloor(currentFloorIndex, activeContainerSelector);
+            $('#adminEditModal').modal('hide');
+          });
+        },
+        error: function(xhr) {
+          alert('Failed to update parking space: ' + (xhr.responseJSON?.error || 'Unknown error'));
+        }
+      });
+    });
+
+    // Initialize: fetch maps and parking spaces, then start overdue polling
+    fetchMaps(function() {
+      fetchParkingSpaces(function() {
+        if (mapData.floors.length > 0) {
+          loadFloor(currentFloorIndex, activeContainerSelector);
+        } else {
+          alert('No maps available for this location.');
+        }
+
+        // initial overdue fetch
+        fetchOverdueFeed();
+
+        // start polling every 15 seconds
+        if (overduePollInterval) clearInterval(overduePollInterval);
+        overduePollInterval = setInterval(fetchOverdueFeed, 15000);
+      });
+    });
+
+    // Clean up on unload
+    $(window).on('beforeunload', function() {
+      if (overduePollInterval) clearInterval(overduePollInterval);
+    });
+  });
+</script>
 
   <!-- Admin Edit Modal -->
   <div class="modal fade" id="adminEditModal" tabindex="-1" aria-labelledby="adminEditModalLabel" aria-hidden="true">
