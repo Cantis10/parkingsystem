@@ -6,7 +6,7 @@ const session = require('express-session');
 const { createClient } = require('@libsql/client');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 require('dotenv').config();
 const PORT = process.env.PORT || 3000;
 const app = express();
@@ -74,27 +74,8 @@ app.get('/api/auth/verify/:token', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-//add mail transporter
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587, // or 465 for SSL
-  secure: false, // true for 465, false for 587
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  tls: {
-    rejectUnauthorized: false // May help with cert issues
-  }
-});
-
+// Initialize Resend client
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Add session middleware with better configuration for Vercel
 app.use(session({
@@ -349,7 +330,7 @@ app.post('/api/auth/logout', (req, res) => {
 
 
 
-// Updated Register endpoint with automatic verification email
+// Updated Register endpoint with automatic verification email using Resend
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password, liscense_plate } = req.body;
   if (!username || !email || !password || !liscense_plate)
@@ -379,22 +360,29 @@ app.post('/api/auth/register', async (req, res) => {
       const token = jwt.sign({ email }, process.env.JWT_SECRET, { expiresIn: '24h' });
       const verificationLink = `${BASE_URL}/api/auth/verify/${encodeURIComponent(token)}`;
 
-      // Send verification email
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: email,
-        subject: 'Verify your email address',
-        html: `
-          <h2>Verify your email address</h2>
-          <p>Click below to verify this email before completing your registration:</p>
-          <p><a href="${verificationLink}" target="_blank">${verificationLink}</a></p>
-          <p>If you didn't request this, ignore it.</p>
-        `
-      };
-
+      // Send verification email using Resend
       try {
-        await transporter.sendMail(mailOptions);
-        console.log('📧 Verification email sent to:', email);
+        const { data, error } = await resend.emails.send({
+          from: 'Master Parker <noreply@group5masterparker.shop>',
+          to: [email],
+          subject: 'Verify your email address',
+          html: `
+            <h2>Verify your email address</h2>
+            <p>Click below to verify this email before completing your registration:</p>
+            <p><a href="${verificationLink}" target="_blank">${verificationLink}</a></p>
+            <p>If you didn't request this, ignore it.</p>
+          `
+        });
+
+        if (error) {
+          console.error('❌ Failed to send verification email:', error);
+          return res.status(500).json({
+            error: 'Failed to send verification email. Please try again later.',
+            details: error.message
+          });
+        }
+
+        console.log('📧 Verification email sent to:', email, 'Message ID:', data?.id);
       } catch (emailErr) {
         console.error('❌ Failed to send verification email:', emailErr);
         return res.status(500).json({
@@ -690,15 +678,21 @@ app.get('/api/auth/user', async (req, res) => {
 
 app.get('/test-email', async (req, res) => {
   try {
-    const info = await transporter.sendMail({
-      from: `"Parking Web Test" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_USER, // send to yourself first
+    const { data, error } = await resend.emails.send({
+      from: 'Master Parker <noreply@group5masterparker.shop>',
+      to: [process.env.EMAIL_USER || 'test@example.com'],
       subject: '✅ Test Email from Parking Web',
-      text: 'If you got this, your Gmail setup is working!',
+      text: 'If you got this, your Resend setup is working!',
+      html: '<p>If you got this, your <strong>Resend</strong> setup is working!</p>'
     });
 
-    console.log('Email sent:', info.messageId);
-    res.send('✅ Test email sent successfully!');
+    if (error) {
+      console.error('❌ Email test failed:', error);
+      return res.status(500).send(`❌ Failed to send email: ${error.message}`);
+    }
+
+    console.log('Email sent successfully:', data);
+    res.send(`✅ Test email sent successfully! Message ID: ${data?.id}`);
   } catch (err) {
     console.error('❌ Email test failed:', err);
     res.status(500).send(`❌ Failed to send email: ${err.message}`);
@@ -713,7 +707,8 @@ app.get('/api/health', (req, res) => {
     env: {
       hasTursoUrl: !!process.env.TURSO_DATABASE_URL,
       hasTursoToken: !!process.env.TURSO_AUTH_TOKEN,
-      hasSessionSecret: !!process.env.SESSION_SECRET
+      hasSessionSecret: !!process.env.SESSION_SECRET,
+      hasResendKey: !!process.env.RESEND_API_KEY
     }
   });
 });
