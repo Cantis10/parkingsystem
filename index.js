@@ -469,82 +469,7 @@ app.get('/admin-map', requireAuth, (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin-map.html'));
 });
 
-app.post('/api/admin/parking/update', async (req, res) => {
-  const user = getUserFromToken(req);
-  if (!user) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
 
-  if (user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin privileges required' });
-  }
-
-  const {
-    index,
-    location_x,
-    location_y,
-    width,
-    height,
-    floor,
-    price,
-    state,
-    exclusive,
-    plate,
-    days_to_occupy,
-    restriction_start,
-    restriction_end,
-    restriction_frequency
-  } = req.body;
-
-  if (!index) {
-    return res.status(400).json({ error: 'Parking space index required' });
-  }
-
-  try {
-    // Verify the parking space exists and get its location_index
-    const spaceResult = await db.execute({
-      sql: 'SELECT location_index FROM parking_spaces WHERE "index" = ?',
-      args: [index]
-    });
-
-    if (spaceResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Parking space not found' });
-    }
-
-    const locationIndex = spaceResult.rows[0].location_index;
-
-    // Verify admin has access to this location
-    if (user.location_index_admin && parseInt(user.location_index_admin) !== parseInt(locationIndex)) {
-      return res.status(403).json({ error: 'You do not have admin access to this location' });
-    }
-
-    // Update the parking space
-    const currentTime = new Date().toISOString();
-    await db.execute({
-      sql: `UPDATE parking_spaces 
-            SET location_x = ?, location_y = ?, width = ?, height = ?, 
-                floor = ?, price = ?, state = ?, exclusive = ?, 
-                plate = ?, days_to_occupy = ?, last_update = ?,
-                restriction_start = ?, restriction_end = ?, restriction_frequency = ?
-            WHERE "index" = ?`,
-      args: [
-        location_x, location_y, width, height,
-        floor, price, state, exclusive,
-        plate, days_to_occupy, currentTime,
-        restriction_start, restriction_end, restriction_frequency,
-        index
-      ]
-    });
-
-    // Update the location's available slots count
-    await updateLocationAvailableSlots(locationIndex);
-
-    res.json({ success: true, message: 'Parking space updated successfully' });
-  } catch (err) {
-    console.error('Error updating parking space:', err);
-    res.status(500).json({ error: 'Failed to update parking space', details: err.message });
-  }
-});
 
 // Update account settings endpoint
 app.post('/api/account/update', async (req, res) => {
@@ -744,8 +669,137 @@ app.get('/api/maps/:location_id', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch maps', details: err.message });
   }
 });
-// -----------------------------------------------------------------------------
-// API endpoint to get parking spaces for a specific location
+
+
+/**
+ * Check if a parking space is currently restricted based on restriction_json
+ * @param {string} restrictionJson - JSON string containing restriction rules
+ * @returns {boolean} - true if restricted, false if available
+ */
+function isSpaceRestricted(restrictionJson) {
+  if (!restrictionJson) return false;
+  
+  try {
+    const restrictions = JSON.parse(restrictionJson);
+    const now = new Date();
+    
+    // Get current time components
+    const currentMonth = now.getMonth() + 1; // 1-12
+    const currentDay = now.getDate(); // 1-31
+    const currentDayOfWeek = now.getDay(); // 0=Sunday, 6=Saturday
+    const currentTime = now.toTimeString().slice(0, 5); // "HH:MM"
+    
+    // Check yearly restrictions (specific dates like Christmas)
+    if (restrictions.yearly && typeof restrictions.yearly === 'object') {
+      for (const [monthDay, timeRanges] of Object.entries(restrictions.yearly)) {
+        // Format: "12-25" for December 25th
+        const [month, day] = monthDay.split('-').map(Number);
+        if (currentMonth === month && currentDay === day) {
+          if (isTimeRestricted(timeRanges, currentTime)) {
+            return true;
+          }
+        }
+      }
+    }
+    
+    // Check weekly restrictions (days of week)
+    if (restrictions.weekly && typeof restrictions.weekly === 'object') {
+      for (const [dayOfWeek, timeRanges] of Object.entries(restrictions.weekly)) {
+        // 0=Sunday, 1=Monday, ..., 6=Saturday
+        if (currentDayOfWeek === parseInt(dayOfWeek)) {
+          if (isTimeRestricted(timeRanges, currentTime)) {
+            return true;
+          }
+        }
+      }
+    }
+    
+    // Check daily restrictions (applies every day)
+    if (restrictions.daily && typeof restrictions.daily === 'object') {
+      if (isTimeRestricted(restrictions.daily, currentTime)) {
+        return true;
+      }
+    }
+    
+    // Check special restrictions (specific dates with daily patterns)
+    if (restrictions.special && restrictions.special.daily && typeof restrictions.special.daily === 'object') {
+      for (const [dateStr, timeRanges] of Object.entries(restrictions.special.daily)) {
+        // Format: "2025-12-25" for specific date
+        const [year, month, day] = dateStr.split('-').map(Number);
+        if (now.getFullYear() === year && currentMonth === month && currentDay === day) {
+          if (isTimeRestricted(timeRanges, currentTime)) {
+            return true;
+          }
+        }
+      }
+    }
+    
+    return false;
+  } catch (err) {
+    console.error('Error parsing restriction_json:', err);
+    return false;
+  }
+}
+
+/**
+ * Check if current time falls within restricted time ranges
+ * @param {object|array} timeRanges - Object or array of time ranges
+ * @param {string} currentTime - Current time in "HH:MM" format
+ * @returns {boolean} - true if time is restricted
+ */
+function isTimeRestricted(timeRanges, currentTime) {
+  // Handle array of time ranges: ["09:00-17:00", "19:00-22:00"]
+  if (Array.isArray(timeRanges)) {
+    return timeRanges.some(range => isTimeInRange(range, currentTime));
+  }
+  
+  // Handle object with time ranges: { "09:00-17:00": true, "19:00-22:00": true }
+  if (typeof timeRanges === 'object') {
+    return Object.keys(timeRanges).some(range => isTimeInRange(range, currentTime));
+  }
+  
+  // Handle single string: "09:00-17:00"
+  if (typeof timeRanges === 'string') {
+    return isTimeInRange(timeRanges, currentTime);
+  }
+  
+  return false;
+}
+
+/**
+ * Check if a time falls within a time range
+ * @param {string} range - Time range in format "HH:MM-HH:MM"
+ * @param {string} time - Time to check in "HH:MM" format
+ * @returns {boolean}
+ */
+function isTimeInRange(range, time) {
+  const [start, end] = range.split('-');
+  if (!start || !end) return false;
+  
+  // Convert to minutes for easier comparison
+  const timeInMinutes = timeToMinutes(time);
+  const startInMinutes = timeToMinutes(start);
+  const endInMinutes = timeToMinutes(end);
+  
+  // Handle ranges that cross midnight
+  if (endInMinutes < startInMinutes) {
+    return timeInMinutes >= startInMinutes || timeInMinutes <= endInMinutes;
+  }
+  
+  return timeInMinutes >= startInMinutes && timeInMinutes <= endInMinutes;
+}
+
+/**
+ * Convert time string to minutes since midnight
+ * @param {string} time - Time in "HH:MM" format
+ * @returns {number}
+ */
+function timeToMinutes(time) {
+  const [hours, minutes] = time.split(':').map(Number);
+  return hours * 60 + minutes;
+}
+
+// REPLACE the existing /api/parking/:location_id endpoint with this updated version:
 app.get('/api/parking/:location_id', async (req, res) => {
   try {
     const locationId = req.params.location_id;
@@ -755,22 +809,26 @@ app.get('/api/parking/:location_id', async (req, res) => {
     });
 
     const spaces = result.rows.map(row => {
-      // CRITICAL FIX: Use Number.isInteger to check if the value is a valid integer.
-      // If the row.floor is non-numeric (NaN), default it to 0 or another known integer.
       const parsedFloor = parseInt(row.floor, 10);
       const floorValue = Number.isNaN(parsedFloor) ? 0 : parsedFloor;
+      
+      // Check if space is currently restricted
+      const isRestricted = isSpaceRestricted(row.restriction_json);
+      
+      // If restricted and currently available, mark as restricted
+      let effectiveState = row.state;
+      if (isRestricted && row.state === 'available') {
+        effectiveState = 'restricted';
+      }
 
       return {
         id: row.id,
-        state: row.state,
+        state: effectiveState,
+        originalState: row.state,
         feature: row.exclusive,
         price: row.price,
         index: row.index,
-
-        // Use the safely parsed floor value
         floor: floorValue,
-
-        // Ensure other coordinates are also safely parsed
         locationIndex: parseInt(row.location_index, 10) || 0,
         locationX: parseInt(row.location_x, 10) || 0,
         locationY: parseInt(row.location_y, 10) || 0,
@@ -779,18 +837,15 @@ app.get('/api/parking/:location_id', async (req, res) => {
         plate: row.plate,
         daysToOccupy: row.days_to_occupy,
         lastUpdate: row.last_update,
-        restrictionStart: row.restriction_start,
-        restrictionEnd: row.restriction_end,
-        restrictionFrequency: row.restriction_frequency
+        restrictionJson: row.restriction_json,
+        isRestricted: isRestricted
       };
     });
 
-    // Log the new parsed value
     console.log('Rows found:', result.rows.length);
     if (spaces.length > 0) {
-      console.log(`[API Parking Success - FIXED] Location ${locationId}: Found ${spaces.length} spaces. First floor type: ${typeof spaces[0].floor}, Value: ${spaces[0].floor}`);
-    } else {
-      console.log(`[API Parking Success] Location ${locationId}: Found 0 spaces.`);
+      const restrictedCount = spaces.filter(s => s.isRestricted).length;
+      console.log(`[API Parking Success] Location ${locationId}: Found ${spaces.length} spaces (${restrictedCount} currently restricted)`);
     }
 
     res.json(spaces);
@@ -799,6 +854,179 @@ app.get('/api/parking/:location_id', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch parking spaces', details: err.message });
   }
 });
+
+// UPDATE the /api/parking/reserve endpoint to check restrictions:
+app.post('/api/parking/reserve', async (req, res) => {
+  const { index, plate, days } = req.body;
+
+  console.log('Reservation request:', { index, plate, days });
+
+  const user = getUserFromToken(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  if (!index || !plate || !days || days <= 0) {
+    return res.status(400).json({ error: 'Invalid reservation data' });
+  }
+
+  const currentTime = new Date().toISOString();
+
+  try {
+    const checkResult = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Parking space not found' });
+    }
+
+    const row = checkResult.rows[0];
+    console.log('Found space:', row);
+
+    // Check if space is currently restricted
+    if (isSpaceRestricted(row.restriction_json)) {
+      return res.status(403).json({ 
+        error: 'This parking space is currently restricted and cannot be reserved at this time' 
+      });
+    }
+
+    const exclusive = row.exclusive?.toLowerCase() || 'normal';
+    const role = user.role?.toLowerCase() || 'user';
+
+    if (exclusive !== 'normal' && exclusive !== role) {
+      return res.status(403).json({
+        error: `Only ${exclusive.toUpperCase()} users can reserve this parking space`
+      });
+    }
+
+    if (row.state !== 'available') {
+      return res.status(400).json({ error: 'Parking space is not available' });
+    }
+
+    await db.execute({
+      sql: `UPDATE parking_spaces 
+            SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
+            WHERE "index" = ?`,
+      args: ['taken', plate, days, currentTime, index]
+    });
+
+    await db.execute({
+      sql: `UPDATE accounts 
+            SET slot_index_taken = ?, location_taken = ? 
+            WHERE email = ?`,
+      args: [index, row.location_index, user.email]
+    });
+
+    await updateLocationAvailableSlots(row.location_index);
+
+    const updatedResult = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    const updatedRow = updatedResult.rows[0];
+    const updatedSpace = {
+      id: updatedRow.id,
+      state: updatedRow.state,
+      feature: updatedRow.exclusive,
+      price: updatedRow.price,
+      index: updatedRow.index,
+      floor: updatedRow.floor,
+      locationIndex: updatedRow.location_index,
+      locationX: updatedRow.location_x,
+      locationY: updatedRow.location_y,
+      sizeX: updatedRow.width,
+      sizeY: updatedRow.height,
+      plate: updatedRow.plate,
+      daysToOccupy: updatedRow.days_to_occupy,
+      lastUpdate: updatedRow.last_update,
+      restrictionJson: updatedRow.restriction_json
+    };
+
+    console.log(`Reservation successful by ${user.role}:`, updatedSpace);
+    res.json(updatedSpace);
+  } catch (err) {
+    console.error('Error during reservation:', err);
+    res.status(500).json({ error: 'Failed to reserve parking space', details: err.message });
+  }
+});
+
+// UPDATE: Modify the admin parking update endpoint to handle restriction_json
+
+
+// ADD: New endpoint to validate restriction JSON format
+app.post('/api/admin/parking/validate-restrictions', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin privileges required' });
+  }
+
+  const { restriction_json } = req.body;
+
+  try {
+    const restrictions = JSON.parse(restriction_json);
+    
+    // Validate structure
+    const validKeys = ['yearly', 'weekly', 'daily', 'special'];
+    const providedKeys = Object.keys(restrictions);
+    const invalidKeys = providedKeys.filter(k => !validKeys.includes(k));
+    
+    if (invalidKeys.length > 0) {
+      return res.status(400).json({ 
+        valid: false, 
+        error: `Invalid keys: ${invalidKeys.join(', ')}. Valid keys are: ${validKeys.join(', ')}` 
+      });
+    }
+
+    res.json({ 
+      valid: true, 
+      message: 'Restriction JSON is valid',
+      preview: getRestrictionPreview(restrictions)
+    });
+  } catch (err) {
+    res.status(400).json({ 
+      valid: false, 
+      error: 'Invalid JSON format', 
+      details: err.message 
+    });
+  }
+});
+
+/**
+ * Generate a human-readable preview of restrictions
+ */
+function getRestrictionPreview(restrictions) {
+  const preview = [];
+  
+  if (restrictions.yearly) {
+    Object.entries(restrictions.yearly).forEach(([date, times]) => {
+      const [month, day] = date.split('-');
+      preview.push(`Yearly on ${month}/${day}: ${JSON.stringify(times)}`);
+    });
+  }
+  
+  if (restrictions.weekly) {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    Object.entries(restrictions.weekly).forEach(([dayNum, times]) => {
+      preview.push(`Every ${days[dayNum]}: ${JSON.stringify(times)}`);
+    });
+  }
+  
+  if (restrictions.daily) {
+    preview.push(`Daily: ${JSON.stringify(restrictions.daily)}`);
+  }
+  
+  if (restrictions.special?.daily) {
+    Object.entries(restrictions.special.daily).forEach(([date, times]) => {
+      preview.push(`Special date ${date}: ${JSON.stringify(times)}`);
+    });
+  }
+  
+  return preview;
+}
+
 
 app.post('/api/parking/release', async (req, res) => {
   const { index } = req.body;
@@ -848,99 +1076,7 @@ app.post('/api/parking/release', async (req, res) => {
   }
 });
 
-// API endpoint to reserve a parking space (updated to use 'index' column)
-app.post('/api/parking/reserve', async (req, res) => {
-  const { index, plate, days } = req.body;
 
-  console.log('Reservation request:', { index, plate, days });
-
-  const user = getUserFromToken(req);
-  if (!user) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-
-  if (!index || !plate || !days || days <= 0) {
-    return res.status(400).json({ error: 'Invalid reservation data' });
-  }
-
-  const currentTime = new Date().toISOString();
-
-  try {
-    const checkResult = await db.execute({
-      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
-      args: [index]
-    });
-
-    if (checkResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Parking space not found' });
-    }
-
-    const row = checkResult.rows[0];
-    console.log('Found space:', row);
-
-    const exclusive = row.exclusive?.toLowerCase() || 'normal';
-    const role = user.role?.toLowerCase() || 'user';
-
-    if (exclusive !== 'normal' && exclusive !== role) {
-      return res.status(403).json({
-        error: `Only ${exclusive.toUpperCase()} users can reserve this parking space`
-      });
-    }
-
-    if (row.state !== 'available') {
-      return res.status(400).json({ error: 'Parking space is not available' });
-    }
-
-    await db.execute({
-      sql: `UPDATE parking_spaces 
-            SET state = ?, plate = ?, days_to_occupy = ?, last_update = ? 
-            WHERE "index" = ?`,
-      args: ['taken', plate, days, currentTime, index]
-    });
-
-    await db.execute({
-      sql: `UPDATE accounts 
-            SET slot_index_taken = ?, location_taken = ? 
-            WHERE email = ?`,
-      args: [index, row.location_index, user.email]
-    });
-
-    // Update location available slots
-    await updateLocationAvailableSlots(row.location_index);
-
-    const updatedResult = await db.execute({
-      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
-      args: [index]
-    });
-
-    const updatedRow = updatedResult.rows[0];
-    const updatedSpace = {
-      id: updatedRow.id,
-      state: updatedRow.state,
-      feature: updatedRow.exclusive,
-      price: updatedRow.price,
-      index: updatedRow.index,
-      floor: updatedRow.floor,
-      locationIndex: updatedRow.location_index,
-      locationX: updatedRow.location_x,
-      locationY: updatedRow.location_y,
-      sizeX: updatedRow.width,
-      sizeY: updatedRow.height,
-      plate: updatedRow.plate,
-      daysToOccupy: updatedRow.days_to_occupy,
-      lastUpdate: updatedRow.last_update,
-      restrictionStart: updatedRow.restriction_start,
-      restrictionEnd: updatedRow.restriction_end,
-      restrictionFrequency: updatedRow.restriction_frequency
-    };
-
-    console.log(`Reservation successful by ${user.role}:`, updatedSpace);
-    res.json(updatedSpace);
-  } catch (err) {
-    console.error('Error during reservation:', err);
-    res.status(500).json({ error: 'Failed to reserve parking space', details: err.message });
-  }
-});
 
 async function updateLocationAvailableSlots(locationId) {
   try {

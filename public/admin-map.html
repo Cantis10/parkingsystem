@@ -31,6 +31,10 @@
       background-color: rgba(40, 167, 69, 0.6);
       border: 2px solid green;
     }
+    .parking-space.state-restricted {
+      background-color: rgba(128, 128, 128, 0.6);
+      border: 2px solid #666;
+    }
     .map-container {
       position: absolute;
       top: 0; left: 0;
@@ -51,7 +55,6 @@
       font-weight: bold;
       z-index: 1000;
     }
-
     .overdue-panel {
       position: fixed;
       right: 20px;
@@ -82,6 +85,23 @@
       text-align: center;
       padding: 12px 6px;
     }
+    .restriction-item {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 8px;
+      margin-bottom: 8px;
+    }
+    .json-preview {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 0.85rem;
+      max-height: 200px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
@@ -102,7 +122,7 @@
     <i class="fas fa-user-shield"></i> Admin Mode
   </div>
 
-    <div id="overdue-feed" class="overdue-panel">
+  <div id="overdue-feed" class="overdue-panel">
     <h6>Overdue Queue</h6>
     <ul id="overdue-list" class="list-group list-group-flush">
       <li class="list-group-item overdue-empty">Loading...</li>
@@ -150,6 +170,12 @@
     let activeContainerSelector = '#map-container-1';
     let overduePollInterval = null;
 
+    // Restriction builder state
+    let dailyRestrictions = [];
+    let weeklyRestrictions = {};
+    let yearlyRestrictions = {};
+    let specialRestrictions = {};
+
     // Verify admin access
     $.ajax({
       url: '/api/auth/user',
@@ -169,7 +195,6 @@
         url: `/api/maps/${locationId}`,
         method: 'GET',
         success: function(data) {
-          // data is array of { floor, floorsImageIndex, ... }
           mapData.maps = (data || []).map(m => `/images/map/${m.floorsImageIndex}`);
           mapData.floors = (data || []).map(m => m.floor);
           if (callback) callback();
@@ -201,7 +226,6 @@
       const floor = mapData.floors[index];
       const $container = $(containerSelector);
 
-      // set image if available, else keep existing
       if (mapData.maps[index]) {
         $container.find('.map-image').attr('src', mapData.maps[index]);
       }
@@ -270,7 +294,6 @@
 
       const now = new Date();
       items.forEach(item => {
-        // item.expiry may be ISO or sqlite datetime string; try parsing
         const expiry = item.expiry ? new Date(item.expiry) : null;
         const overdueDays = expiry ? Math.floor((now - expiry) / (1000 * 60 * 60 * 24)) : 0;
         const overdueLabel = overdueDays > 0 ? `${overdueDays}d overdue` : 'Due today';
@@ -295,7 +318,6 @@
     }
 
     function highlightOverdueOnMap(items) {
-      // Clear previous highlights
       $('.parking-space').each(function() {
         $(this).css({
           'box-shadow': '',
@@ -317,7 +339,6 @@
       });
     }
 
-    // click an overdue item -> open admin modal for that space
     $('#overdue-list').on('click', '.overdue-item', function() {
       const idx = $(this).data('index');
       const space = parkingSpaces.find(s => String(s.index) === String(idx));
@@ -327,7 +348,6 @@
         return;
       }
 
-      // fallback: refetch spaces then open
       fetchParkingSpaces(function() {
         const space2 = parkingSpaces.find(s => String(s.index) === String(idx));
         if (space2) {
@@ -338,6 +358,194 @@
         alert('Space not found');
       });
     });
+
+    // Restriction mode change handler
+    $('#restriction-mode').on('change', function() {
+      const mode = $(this).val();
+      $('#restriction-builder').hide();
+      $('#restriction-json-editor').hide();
+      
+      if (mode === 'builder') {
+        $('#restriction-builder').show();
+      } else if (mode === 'json') {
+        $('#restriction-json-editor').show();
+      }
+    });
+
+    // Add restriction functions
+    window.addDailyRestriction = function() {
+      const id = 'daily-' + Date.now();
+      const html = `
+        <div class="restriction-item" id="${id}">
+          <div class="d-flex align-items-center gap-2">
+            <input type="time" class="form-control form-control-sm" data-type="start" style="width:100px;">
+            <span>to</span>
+            <input type="time" class="form-control form-control-sm" data-type="end" style="width:100px;">
+            <button class="btn btn-sm btn-danger" type="button" onclick="removeRestriction('${id}')">×</button>
+          </div>
+        </div>
+      `;
+      $('#daily-list').append(html);
+    };
+
+    window.addWeeklyRestriction = function() {
+      const id = 'weekly-' + Date.now();
+      const html = `
+        <div class="restriction-item" id="${id}">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <select class="form-select form-select-sm" data-type="day" style="width:120px;">
+              <option value="0">Sunday</option>
+              <option value="1">Monday</option>
+              <option value="2">Tuesday</option>
+              <option value="3">Wednesday</option>
+              <option value="4">Thursday</option>
+              <option value="5">Friday</option>
+              <option value="6">Saturday</option>
+            </select>
+            <input type="time" class="form-control form-control-sm" data-type="start" style="width:90px;">
+            <span>to</span>
+            <input type="time" class="form-control form-control-sm" data-type="end" style="width:90px;">
+            <button class="btn btn-sm btn-danger" type="button" onclick="removeRestriction('${id}')">×</button>
+          </div>
+        </div>
+      `;
+      $('#weekly-list').append(html);
+    };
+
+    window.addYearlyRestriction = function() {
+      const id = 'yearly-' + Date.now();
+      const html = `
+        <div class="restriction-item" id="${id}">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <input type="number" class="form-control form-control-sm" placeholder="Month" data-type="month" min="1" max="12" style="width:80px;">
+            <input type="number" class="form-control form-control-sm" placeholder="Day" data-type="day" min="1" max="31" style="width:70px;">
+            <input type="time" class="form-control form-control-sm" data-type="start" style="width:90px;">
+            <span>to</span>
+            <input type="time" class="form-control form-control-sm" data-type="end" style="width:90px;">
+            <button class="btn btn-sm btn-danger" type="button" onclick="removeRestriction('${id}')">×</button>
+          </div>
+        </div>
+      `;
+      $('#yearly-list').append(html);
+    };
+
+    window.addSpecialRestriction = function() {
+      const id = 'special-' + Date.now();
+      const html = `
+        <div class="restriction-item" id="${id}">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <input type="date" class="form-control form-control-sm" data-type="date" style="width:150px;">
+            <input type="time" class="form-control form-control-sm" data-type="start" style="width:90px;">
+            <span>to</span>
+            <input type="time" class="form-control form-control-sm" data-type="end" style="width:90px;">
+            <button class="btn btn-sm btn-danger" type="button" onclick="removeRestriction('${id}')">×</button>
+          </div>
+        </div>
+      `;
+      $('#special-list').append(html);
+    };
+
+    window.removeRestriction = function(id) {
+      $('#' + id).remove();
+      updateJsonPreview();
+    };
+
+    window.validateRestrictionJson = function() {
+      const json = $('#edit-restriction-json').val().trim();
+      const $result = $('#json-validation-result');
+      
+      if (!json) {
+        $result.html('<div class="alert alert-info mb-0 mt-2">No restrictions defined</div>');
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(json);
+        $result.html('<div class="alert alert-success mb-0 mt-2"><i class="fas fa-check-circle"></i> Valid JSON format!</div>');
+      } catch (e) {
+        $result.html(`<div class="alert alert-danger mb-0 mt-2"><i class="fas fa-times-circle"></i> Invalid JSON: ${e.message}</div>`);
+      }
+    };
+
+    function updateJsonPreview() {
+      const json = buildRestrictionJsonFromBuilder();
+      if (json) {
+        const formatted = JSON.stringify(JSON.parse(json), null, 2);
+        $('#json-preview-content').text(formatted);
+        $('#json-preview-section').show();
+      } else {
+        $('#json-preview-section').hide();
+      }
+    }
+
+    // Add input listeners to all restriction inputs
+    $(document).on('change', '#daily-list input, #weekly-list input, #weekly-list select, #yearly-list input, #special-list input', updateJsonPreview);
+
+    function buildRestrictionJsonFromBuilder() {
+      const restrictions = {};
+
+      // Daily restrictions
+      const dailyRanges = [];
+      $('#daily-list .restriction-item').each(function() {
+        const start = $(this).find('[data-type="start"]').val();
+        const end = $(this).find('[data-type="end"]').val();
+        if (start && end) {
+          dailyRanges.push(`${start}-${end}`);
+        }
+      });
+      if (dailyRanges.length > 0) {
+        restrictions.daily = dailyRanges;
+      }
+
+      // Weekly restrictions
+      const weeklyObj = {};
+      $('#weekly-list .restriction-item').each(function() {
+        const day = $(this).find('[data-type="day"]').val();
+        const start = $(this).find('[data-type="start"]').val();
+        const end = $(this).find('[data-type="end"]').val();
+        if (day && start && end) {
+          if (!weeklyObj[day]) weeklyObj[day] = [];
+          weeklyObj[day].push(`${start}-${end}`);
+        }
+      });
+      if (Object.keys(weeklyObj).length > 0) {
+        restrictions.weekly = weeklyObj;
+      }
+
+      // Yearly restrictions
+      const yearlyObj = {};
+      $('#yearly-list .restriction-item').each(function() {
+        const month = $(this).find('[data-type="month"]').val();
+        const day = $(this).find('[data-type="day"]').val();
+        const start = $(this).find('[data-type="start"]').val();
+        const end = $(this).find('[data-type="end"]').val();
+        if (month && day && start && end) {
+          const key = `${month}-${day}`;
+          if (!yearlyObj[key]) yearlyObj[key] = [];
+          yearlyObj[key].push(`${start}-${end}`);
+        }
+      });
+      if (Object.keys(yearlyObj).length > 0) {
+        restrictions.yearly = yearlyObj;
+      }
+
+      // Special restrictions
+      const specialObj = {};
+      $('#special-list .restriction-item').each(function() {
+        const date = $(this).find('[data-type="date"]').val();
+        const start = $(this).find('[data-type="start"]').val();
+        const end = $(this).find('[data-type="end"]').val();
+        if (date && start && end) {
+          if (!specialObj[date]) specialObj[date] = [];
+          specialObj[date].push(`${start}-${end}`);
+        }
+      });
+      if (Object.keys(specialObj).length > 0) {
+        restrictions.special = { daily: specialObj };
+      }
+
+      return Object.keys(restrictions).length > 0 ? JSON.stringify(restrictions) : null;
+    }
 
     function populateAdminModal(space) {
       $('#edit-index').val(space.index);
@@ -351,12 +559,136 @@
       $('#edit-exclusive').val(space.feature);
       $('#edit-plate').val(space.plate || '');
       $('#edit-days').val(space.daysToOccupy || 0);
-      $('#edit-restriction-start').val(space.restrictionStart || '');
-      $('#edit-restriction-end').val(space.restrictionEnd || '');
-      $('#edit-restriction-frequency').val(space.restrictionFrequency || 0);
+
+      // Clear restriction builders
+      $('#daily-list').empty();
+      $('#weekly-list').empty();
+      $('#yearly-list').empty();
+      $('#special-list').empty();
+      $('#json-preview-section').hide();
+
+      // Load restrictions
+      if (space.restrictionJson) {
+        try {
+          const restrictions = JSON.parse(space.restrictionJson);
+          
+          // Populate daily
+          if (restrictions.daily && Array.isArray(restrictions.daily)) {
+            restrictions.daily.forEach(range => {
+              const [start, end] = range.split('-');
+              const id = 'daily-' + Date.now() + Math.random();
+              const html = `
+                <div class="restriction-item" id="${id}">
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:100px;">
+                    <span>to</span>
+                    <input type="time" class="form-control form-control-sm" data-type="end" value="${end}" style="width:100px;">
+                    <button class="btn btn-sm btn-danger" type="button" onclick="removeRestriction('${id}')">×</button>
+                  </div>
+                </div>
+              `;
+              $('#daily-list').append(html);
+            });
+          }
+
+          // Populate weekly
+          if (restrictions.weekly && typeof restrictions.weekly === 'object') {
+            Object.entries(restrictions.weekly).forEach(([day, ranges]) => {
+              const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
+              rangeArray.forEach(range => {
+                const [start, end] = range.split('-');
+                const id = 'weekly-' + Date.now() + Math.random();
+                const html = `
+                  <div class="restriction-item" id="${id}">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                      <select class="form-select form-select-sm" data-type="day" style="width:120px;">
+                        <option value="0" ${day=='0'?'selected':''}>Sunday</option>
+                        <option value="1" ${day=='1'?'selected':''}>Monday</option>
+                        <option value="2" ${day=='2'?'selected':''}>Tuesday</option>
+                        <option value="3" ${day=='3'?'selected':''}>Wednesday</option>
+                        <option value="4" ${day=='4'?'selected':''}>Thursday</option>
+                        <option value="5" ${day=='5'?'selected':''}>Friday</option>
+                        <option value="6" ${day=='6'?'selected':''}>Saturday</option>
+                      </select>
+                      <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:90px;">
+                      <span>to</span>
+                      <input type="time" class="form-control form-control-sm" data-type="end" value="${end}" style="width:90px;">
+                      <button class="btn btn-sm btn-danger" type="button" onclick="removeRestriction('${id}')">×</button>
+                    </div>
+                  </div>
+                `;
+                $('#weekly-list').append(html);
+              });
+            });
+          }
+
+          // Populate yearly
+          if (restrictions.yearly && typeof restrictions.yearly === 'object') {
+            Object.entries(restrictions.yearly).forEach(([monthDay, ranges]) => {
+              const [month, day] = monthDay.split('-');
+              const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
+              rangeArray.forEach(range => {
+                const [start, end] = range.split('-');
+                const id = 'yearly-' + Date.now() + Math.random();
+                const html = `
+                  <div class="restriction-item" id="${id}">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                      <input type="number" class="form-control form-control-sm" placeholder="Month" data-type="month" min="1" max="12" value="${month}" style="width:80px;">
+                      <input type="number" class="form-control form-control-sm" placeholder="Day" data-type="day" min="1" max="31" value="${day}" style="width:70px;">
+                      <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:90px;">
+                      <span>to</span>
+                      <input type="time" class="form-control form-control-sm" data-type="end" value="${end}" style="width:90px;">
+                      <button class="btn btn-sm btn-danger" type="button" onclick="removeRestriction('${id}')">×</button>
+                    </div>
+                  </div>
+                `;
+                $('#yearly-list').append(html);
+              });
+            });
+          }
+
+          // Populate special
+          if (restrictions.special?.daily && typeof restrictions.special.daily === 'object') {
+            Object.entries(restrictions.special.daily).forEach(([date, ranges]) => {
+              const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
+              rangeArray.forEach(range => {
+                const [start, end] = range.split('-');
+                const id = 'special-' + Date.now() + Math.random();
+                const html = `
+                  <div class="restriction-item" id="${id}">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                      <input type="date" class="form-control form-control-sm" data-type="date" value="${date}" style="width:150px;">
+                      <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:90px;">
+                      <span>to</span>
+                      <input type="time" class="form-control form-control-sm" data-type="end" value="${end}" style="width:90px;">
+                      <button class="btn btn-sm btn-danger" type="button" onclick="removeRestriction('${id}')">×</button>
+                    </div>
+                  </div>
+                `;
+                $('#special-list').append(html);
+              });
+            });
+          }
+
+          $('#restriction-mode').val('builder');
+          $('#restriction-builder').show();
+          $('#restriction-json-editor').hide();
+          updateJsonPreview();
+        } catch (e) {
+          console.error('Error parsing restriction JSON:', e);
+          $('#restriction-mode').val('json');
+          $('#restriction-json-editor').show();
+          $('#restriction-builder').hide();
+          $('#edit-restriction-json').val(space.restrictionJson);
+        }
+      } else {
+        $('#restriction-mode').val('none');
+        $('#restriction-json-editor').hide();
+        $('#restriction-builder').hide();
+        $('#edit-restriction-json').val('');
+      }
     }
 
-    // click on a parking space in the map -> open modal
     $('#map-wrapper').on('click', '.parking-space', function() {
       const idx = $(this).data('index');
       const space = parkingSpaces.find(s => String(s.index) === String(idx));
@@ -365,7 +697,6 @@
       $('#adminEditModal').modal('show');
     });
 
-    // floor controls
     $('#floor-up').on('click', function() {
       if (currentFloorIndex >= mapData.floors.length - 1) return;
       const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
@@ -386,9 +717,27 @@
       activeContainerSelector = newContainer;
     });
 
-    // Admin save handler already present in page; ensure after save we refresh spaces & map
+    // Admin save handler
     $('#admin-save').off('click').on('click', function(e) {
       e.preventDefault();
+
+      let restrictionJson = null;
+      const mode = $('#restriction-mode').val();
+
+      if (mode === 'builder') {
+        restrictionJson = buildRestrictionJsonFromBuilder();
+      } else if (mode === 'json') {
+        const jsonText = $('#edit-restriction-json').val().trim();
+        if (jsonText) {
+          try {
+            JSON.parse(jsonText); // Validate
+            restrictionJson = jsonText;
+          } catch (e) {
+            alert('Invalid JSON format in restrictions. Please fix or validate first.');
+            return;
+          }
+        }
+      }
 
       const updatedSpace = {
         index: $('#edit-index').val(),
@@ -402,9 +751,7 @@
         exclusive: $('#edit-exclusive').val(),
         plate: $('#edit-plate').val() || null,
         days_to_occupy: parseInt($('#edit-days').val(), 10) || 0,
-        restriction_start: $('#edit-restriction-start').val() || null,
-        restriction_end: $('#edit-restriction-end').val() || null,
-        restriction_frequency: parseInt($('#edit-restriction-frequency').val(), 10) || 0
+        restriction_json: restrictionJson
       };
 
       $.ajax({
@@ -414,9 +761,9 @@
         data: JSON.stringify(updatedSpace),
         success: function() {
           fetchParkingSpaces(function() {
-            // reload current floor into active container
             loadFloor(currentFloorIndex, activeContainerSelector);
             $('#adminEditModal').modal('hide');
+            alert('Parking space updated successfully!');
           });
         },
         error: function(xhr) {
@@ -425,7 +772,7 @@
       });
     });
 
-    // Initialize: fetch maps and parking spaces, then start overdue polling
+    // Initialize
     fetchMaps(function() {
       fetchParkingSpaces(function() {
         if (mapData.floors.length > 0) {
@@ -434,16 +781,13 @@
           alert('No maps available for this location.');
         }
 
-        // initial overdue fetch
         fetchOverdueFeed();
 
-        // start polling every 15 seconds
         if (overduePollInterval) clearInterval(overduePollInterval);
         overduePollInterval = setInterval(fetchOverdueFeed, 15000);
       });
     });
 
-    // Clean up on unload
     $(window).on('beforeunload', function() {
       if (overduePollInterval) clearInterval(overduePollInterval);
     });
@@ -452,7 +796,7 @@
 
   <!-- Admin Edit Modal -->
   <div class="modal fade" id="adminEditModal" tabindex="-1" aria-labelledby="adminEditModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
       <div class="modal-content">
         <div class="modal-header bg-warning">
           <h5 id="adminEditModalLabel" class="modal-title"><i class="fas fa-edit"></i> Edit Parking Space (Admin)</h5>
@@ -462,88 +806,202 @@
           <form id="admin-edit-form">
             <input type="hidden" id="edit-index">
             
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <label for="edit-location-x" class="form-label">Location X (%)</label>
-                <input type="number" class="form-control" id="edit-location-x" step="0.1" required>
-              </div>
-              <div class="col-md-6 mb-3">
-                <label for="edit-location-y" class="form-label">Location Y (%)</label>
-                <input type="number" class="form-control" id="edit-location-y" step="0.1" required>
-              </div>
-            </div>
+            <ul class="nav nav-tabs mb-3" id="editTabs" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic" type="button">Basic Info</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="restrictions-tab" data-bs-toggle="tab" data-bs-target="#restrictions" type="button">Time Restrictions</button>
+              </li>
+            </ul>
 
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <label for="edit-width" class="form-label">Width (%)</label>
-                <input type="number" class="form-control" id="edit-width" step="0.1" required>
-              </div>
-              <div class="col-md-6 mb-3">
-                <label for="edit-height" class="form-label">Height (%)</label>
-                <input type="number" class="form-control" id="edit-height" step="0.1" required>
-              </div>
-            </div>
+            <div class="tab-content" id="editTabContent">
+              <div class="tab-pane fade show active" id="basic" role="tabpanel">
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="edit-location-x" class="form-label">Location X (%)</label>
+                    <input type="number" class="form-control" id="edit-location-x" step="0.1" required>
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="edit-location-y" class="form-label">Location Y (%)</label>
+                    <input type="number" class="form-control" id="edit-location-y" step="0.1" required>
+                  </div>
+                </div>
 
-            <div class="row">
-              <div class="col-md-4 mb-3">
-                <label for="edit-floor" class="form-label">Floor</label>
-                <input type="number" class="form-control" id="edit-floor" required>
-              </div>
-              <div class="col-md-4 mb-3">
-                <label for="edit-price" class="form-label">Price (PHP)</label>
-                <input type="number" class="form-control" id="edit-price" step="0.01" required>
-              </div>
-              <div class="col-md-4 mb-3">
-                <label for="edit-state" class="form-label">State</label>
-                <select class="form-select" id="edit-state" required>
-                  <option value="available">Available</option>
-                  <option value="taken">Taken</option>
-                  <option value="unavailable">unavailable</option>
-                  <option value="reserved">Reserved</option>
-                </select>
-              </div>
-            </div>
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="edit-width" class="form-label">Width (%)</label>
+                    <input type="number" class="form-control" id="edit-width" step="0.1" required>
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="edit-height" class="form-label">Height (%)</label>
+                    <input type="number" class="form-control" id="edit-height" step="0.1" required>
+                  </div>
+                </div>
 
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <label for="edit-exclusive" class="form-label">Exclusive Type</label>
-                <select class="form-select" id="edit-exclusive" required>
-                  <option value="normal">Normal</option>
-                  <option value="admin">Admin Only</option>
-                  <option value="vip">VIP Only</option>
-                  <option value="disabled">Disabled</option>
-                </select>
-              </div>
-              <div class="col-md-6 mb-3">
-                <label for="edit-plate" class="form-label">License Plate</label>
-                <input type="text" class="form-control" id="edit-plate" placeholder="Leave empty if available">
-              </div>
-            </div>
+                <div class="row">
+                  <div class="col-md-4 mb-3">
+                    <label for="edit-floor" class="form-label">Floor</label>
+                    <input type="number" class="form-control" id="edit-floor" required>
+                  </div>
+                  <div class="col-md-4 mb-3">
+                    <label for="edit-price" class="form-label">Price (PHP)</label>
+                    <input type="number" class="form-control" id="edit-price" step="0.01" required>
+                  </div>
+                  <div class="col-md-4 mb-3">
+                    <label for="edit-state" class="form-label">State</label>
+                    <select class="form-select" id="edit-state" required>
+                      <option value="available">Available</option>
+                      <option value="taken">Taken</option>
+                      <option value="unavailable">Unavailable</option>
+                      <option value="reserved">Reserved</option>
+                    </select>
+                  </div>
+                </div>
 
-            <div class="row">
-              <div class="col-md-4 mb-3">
-                <label for="edit-days" class="form-label">Days to Occupy</label>
-                <input type="number" class="form-control" id="edit-days" min="0" value="0">
-              </div>
-              <div class="col-md-4 mb-3">
-                <label for="edit-restriction-start" class="form-label">Restriction Start</label>
-                <input type="time" class="form-control" id="edit-restriction-start">
-              </div>
-              <div class="col-md-4 mb-3">
-                <label for="edit-restriction-end" class="form-label">Restriction End</label>
-                <input type="time" class="form-control" id="edit-restriction-end">
-              </div>
-            </div>
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="edit-exclusive" class="form-label">Exclusive Type</label>
+                    <select class="form-select" id="edit-exclusive" required>
+                      <option value="normal">Normal</option>
+                      <option value="admin">Admin Only</option>
+                      <option value="vip">VIP Only</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="edit-plate" class="form-label">License Plate</label>
+                    <input type="text" class="form-control" id="edit-plate" placeholder="Leave empty if available">
+                  </div>
+                </div>
 
-            <div class="mb-3">
-              <label for="edit-restriction-frequency" class="form-label">Restriction Frequency (days)</label>
-              <input type="number" class="form-control" id="edit-restriction-frequency" min="0" value="0">
-              <small class="form-text text-muted">0 = No restriction, 1 = Daily, 7 = Weekly, etc.</small>
+                <div class="mb-3">
+                  <label for="edit-days" class="form-label">Days to Occupy</label>
+                  <input type="number" class="form-control" id="edit-days" min="0" value="0">
+                </div>
+              </div>
+
+              <div class="tab-pane fade" id="restrictions" role="tabpanel">
+                <div class="mb-3">
+                  <label class="form-label fw-bold">Restriction Mode</label>
+                  <select class="form-select" id="restriction-mode">
+                    <option value="none">No Restrictions</option>
+                    <option value="builder">Visual Builder (Recommended)</option>
+                    <option value="json">Custom JSON (Advanced)</option>
+                  </select>
+                  <small class="text-muted">Choose how you want to manage time-based parking restrictions</small>
+                </div>
+
+                <div id="restriction-builder" style="display:none;">
+                  <div class="card mb-3">
+                    <div class="card-header bg-primary text-white">
+                      <i class="fas fa-calendar-day"></i> Daily Restrictions
+                      <small class="float-end">Applies every day</small>
+                    </div>
+                    <div class="card-body">
+                      <button type="button" class="btn btn-sm btn-primary mb-2" onclick="addDailyRestriction()">
+                        <i class="fas fa-plus"></i> Add Time Range
+                      </button>
+                      <div id="daily-list"></div>
+                    </div>
+                  </div>
+
+                  <div class="card mb-3">
+                    <div class="card-header bg-success text-white">
+                      <i class="fas fa-calendar-week"></i> Weekly Restrictions
+                      <small class="float-end">Specific days of week</small>
+                    </div>
+                    <div class="card-body">
+                      <button type="button" class="btn btn-sm btn-success mb-2" onclick="addWeeklyRestriction()">
+                        <i class="fas fa-plus"></i> Add Weekly Rule
+                      </button>
+                      <div id="weekly-list"></div>
+                    </div>
+                  </div>
+
+                  <div class="card mb-3">
+                    <div class="card-header bg-warning text-dark">
+                      <i class="fas fa-calendar-alt"></i> Yearly Restrictions
+                      <small class="float-end">Recurring dates (e.g., Christmas)</small>
+                    </div>
+                    <div class="card-body">
+                      <button type="button" class="btn btn-sm btn-warning mb-2" onclick="addYearlyRestriction()">
+                        <i class="fas fa-plus"></i> Add Yearly Date
+                      </button>
+                      <div id="yearly-list"></div>
+                      <small class="text-muted">Example: Month=12, Day=25 for Christmas Day</small>
+                    </div>
+                  </div>
+
+                  <div class="card mb-3">
+                    <div class="card-header bg-info text-white">
+                      <i class="fas fa-star"></i> Special Date Restrictions
+                      <small class="float-end">One-time events</small>
+                    </div>
+                    <div class="card-body">
+                      <button type="button" class="btn btn-sm btn-info mb-2" onclick="addSpecialRestriction()">
+                        <i class="fas fa-plus"></i> Add Special Date
+                      </button>
+                      <div id="special-list"></div>
+                      <small class="text-muted">For specific events or maintenance periods</small>
+                    </div>
+                  </div>
+
+                  <div id="json-preview-section" class="card" style="display:none;">
+                    <div class="card-header bg-secondary text-white">
+                      <i class="fas fa-code"></i> Generated JSON Preview
+                    </div>
+                    <div class="card-body">
+                      <pre id="json-preview-content" class="json-preview mb-0"></pre>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="restriction-json-editor" style="display:none;">
+                  <div class="mb-3">
+                    <label for="edit-restriction-json" class="form-label fw-bold">Restriction JSON</label>
+                    <textarea class="form-control font-monospace" id="edit-restriction-json" rows="12" placeholder='Example:
+{
+  "daily": ["09:00-17:00"],
+  "weekly": {
+    "0": ["00:00-23:59"]
+  },
+  "yearly": {
+    "12-25": ["00:00-23:59"]
+  },
+  "special": {
+    "daily": {
+      "2025-12-31": ["18:00-23:59"]
+    }
+  }
+}'></textarea>
+                    <small class="form-text text-muted">
+                      <strong>Format:</strong> daily (array of "HH:MM-HH:MM"), weekly (object: day 0-6), yearly (object: "MM-DD"), special.daily (object: "YYYY-MM-DD")
+                    </small>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-secondary" onclick="validateRestrictionJson()">
+                    <i class="fas fa-check"></i> Validate JSON
+                  </button>
+                  <div id="json-validation-result"></div>
+                </div>
+
+                <div class="alert alert-info mt-3">
+                  <strong><i class="fas fa-info-circle"></i> Quick Guide:</strong>
+                  <ul class="mb-0 mt-2">
+                    <li><strong>Daily:</strong> Restricts parking every day at specified times</li>
+                    <li><strong>Weekly:</strong> Restricts on specific weekdays (0=Sunday, 6=Saturday)</li>
+                    <li><strong>Yearly:</strong> Restricts on same date each year (e.g., holidays)</li>
+                    <li><strong>Special:</strong> One-time restrictions for specific dates</li>
+                  </ul>
+                </div>
+              </div>
             </div>
           </form>
         </div>
         <div class="modal-footer">
-          <button type="button" id="admin-save" class="btn btn-warning"><i class="fas fa-save"></i> Save Changes</button>
+          <button type="button" id="admin-save" class="btn btn-warning">
+            <i class="fas fa-save"></i> Save Changes
+          </button>
           <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         </div>
       </div>
