@@ -48,33 +48,33 @@ app.get('/api/auth/verify/:token', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userEmail = decoded.email;
 
-    // First, check pending_registrations for the user data
-    const pendingResult = await db.execute({
+    // First check pending_verifications
+    const verificationResult = await db.execute({
+      sql: 'SELECT * FROM pending_verifications WHERE email = ? AND verified = 0',
+      args: [userEmail]
+    });
+
+    if (verificationResult.rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email verification not found or already verified'
+      });
+    }
+
+    // Then get registration data
+    const registrationResult = await db.execute({
       sql: 'SELECT * FROM pending_registrations WHERE email = ? AND verified = 0',
       args: [userEmail]
     });
 
-    if (pendingResult.rows.length === 0) {
+    if (registrationResult.rows.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'No pending registration found or already verified'
+        error: 'Registration data not found'
       });
     }
 
-    const registration = pendingResult.rows[0];
-
-    // Check if account already exists
-    const existingAccount = await db.execute({
-      sql: 'SELECT * FROM accounts WHERE email = ?',
-      args: [userEmail]
-    });
-
-    if (existingAccount.rows.length > 0) {
-      return res.status(409).json({
-        success: false,
-        error: 'Account already exists'
-      });
-    }
+    const registration = registrationResult.rows[0];
 
     // Create the account
     await db.execute({
@@ -91,17 +91,18 @@ app.get('/api/auth/verify/:token', async (req, res) => {
       ]
     });
 
-    // Mark registration as verified
+    // Mark both tables as verified
     await db.execute({
-      sql: `UPDATE pending_registrations 
-            SET verified = 1, verified_at = CURRENT_TIMESTAMP 
+      sql: `UPDATE pending_verifications 
+            SET verified = 1 
             WHERE email = ?`,
       args: [userEmail]
     });
 
-    // Clean up verified registration
     await db.execute({
-      sql: 'DELETE FROM pending_registrations WHERE email = ?',
+      sql: `UPDATE pending_registrations 
+            SET verified = 1, verified_at = CURRENT_TIMESTAMP 
+            WHERE email = ?`,
       args: [userEmail]
     });
 
@@ -392,8 +393,14 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(409).json({ error: 'Email or username already exists' });
     }
 
-    // Create tables if they don't exist
+    // Create both required tables
     await db.execute(`
+      CREATE TABLE IF NOT EXISTS pending_verifications (
+        email TEXT PRIMARY KEY,
+        verified INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
       CREATE TABLE IF NOT EXISTS pending_registrations (
         email TEXT PRIMARY KEY,
         username TEXT,
@@ -402,8 +409,16 @@ app.post('/api/auth/register', async (req, res) => {
         verified INTEGER DEFAULT 0,
         verified_at DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
+      );
     `);
+
+    // Add email to pending_verifications (unverified)
+    await db.execute({
+      sql: `INSERT INTO pending_verifications (email, verified) 
+            VALUES (?, 0)
+            ON CONFLICT(email) DO UPDATE SET verified = 0`,
+      args: [email]
+    });
 
     // Store registration data
     await db.execute({
