@@ -48,13 +48,20 @@ app.get('/api/auth/verify/:token', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userEmail = decoded.email;
 
+    // Create tables if they don't exist
     await db.execute(`
       CREATE TABLE IF NOT EXISTS pending_verifications (
         email TEXT PRIMARY KEY,
         verified INTEGER DEFAULT 0
       );
+      
+      CREATE TABLE IF NOT EXISTS pending_registrations (
+        email TEXT PRIMARY KEY,
+        verified_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
 
+    // Mark as verified in pending_verifications
     await db.execute({
       sql: `
         INSERT INTO pending_verifications (email, verified)
@@ -64,16 +71,31 @@ app.get('/api/auth/verify/:token', async (req, res) => {
       args: [userEmail],
     });
 
+    // Add to pending_registrations for tracking
+    await db.execute({
+      sql: `
+        INSERT OR REPLACE INTO pending_registrations (email)
+        VALUES (?);
+      `,
+      args: [userEmail],
+    });
+
     console.log(`✅ Email verified: ${userEmail}`);
 
-    res.json({ success: true, email: userEmail, message: 'Email verified. You may now complete registration.' });
+    res.json({ 
+      success: true, 
+      email: userEmail, 
+      message: 'Email verified. You may now complete registration.' 
+    });
 
   } catch (err) {
     console.error('Verification error:', err);
-    res.status(400).json({ success: false, error: 'Invalid or expired verification link.' });
+    res.status(400).json({ 
+      success: false, 
+      error: 'Invalid or expired verification link.' 
+    });
   }
 });
-
 // Initialize Resend client
 const resend = new Resend(process.env.RESEND_API_KEY);
 
