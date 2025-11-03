@@ -48,29 +48,42 @@ app.get('/api/auth/verify/:token', async (req, res) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     const userEmail = decoded.email;
 
-    // Get pending registration data
+    // First, check pending_registrations for the user data
     const pendingResult = await db.execute({
-      sql: 'SELECT * FROM pending_registrations WHERE email = ?',
+      sql: 'SELECT * FROM pending_registrations WHERE email = ? AND verified = 0',
       args: [userEmail]
     });
 
     if (pendingResult.rows.length === 0) {
       return res.status(400).json({
         success: false,
-        error: 'No pending registration found'
+        error: 'No pending registration found or already verified'
       });
     }
 
     const registration = pendingResult.rows[0];
 
-    // Create account
+    // Check if account already exists
+    const existingAccount = await db.execute({
+      sql: 'SELECT * FROM accounts WHERE email = ?',
+      args: [userEmail]
+    });
+
+    if (existingAccount.rows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        error: 'Account already exists'
+      });
+    }
+
+    // Create the account
     await db.execute({
       sql: `INSERT INTO accounts 
             (username, email, password, role, liscense_plate, verified, slot_index_taken, location_taken) 
             VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
       args: [
         registration.username,
-        registration.email,
+        userEmail,
         registration.password,
         'user',
         registration.liscense_plate,
@@ -78,7 +91,7 @@ app.get('/api/auth/verify/:token', async (req, res) => {
       ]
     });
 
-    // Update pending registration as verified
+    // Mark registration as verified
     await db.execute({
       sql: `UPDATE pending_registrations 
             SET verified = 1, verified_at = CURRENT_TIMESTAMP 
@@ -86,32 +99,16 @@ app.get('/api/auth/verify/:token', async (req, res) => {
       args: [userEmail]
     });
 
-    // Generate login token
-    const loginToken = jwt.sign(
-      {
-        username: registration.username,
-        email: userEmail,
-        role: 'user',
-        liscense_plate: registration.liscense_plate,
-        slot_index_taken: null,
-        location_taken: null
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    // Set cookie and redirect
-    res.cookie('token', loginToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000
+    // Clean up verified registration
+    await db.execute({
+      sql: 'DELETE FROM pending_registrations WHERE email = ?',
+      args: [userEmail]
     });
 
     console.log(`✅ Email verified and account created: ${userEmail}`);
 
-    // Redirect to home page
-    res.redirect('/home');
+    // Redirect to login with success message
+    res.redirect('/login?verified=true');
 
   } catch (err) {
     console.error('Verification error:', err);
