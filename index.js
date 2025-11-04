@@ -276,6 +276,8 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// Replace the /api/admin/overdue/:location_id endpoint with this fixed version:
+
 app.get('/api/admin/overdue/:location_id', async (req, res) => {
   const user = getUserFromToken(req);
   if (!user) return res.status(401).json({ error: 'Not authenticated' });
@@ -290,11 +292,10 @@ app.get('/api/admin/overdue/:location_id', async (req, res) => {
   }
 
   try {
-    // select expiry as ISO string and only return spaces that are occupied and whose allowed occupancy window has passed
+    // Fixed: Remove 'id' column which doesn't exist in parking_spaces table
     const result = await db.execute({
       sql: `
         SELECT
-          id,
           "index",
           location_index,
           state,
@@ -310,9 +311,7 @@ app.get('/api/admin/overdue/:location_id', async (req, res) => {
           floor,
           price,
           exclusive,
-          restriction_start,
-          restriction_end,
-          restriction_frequency
+          restriction_json
         FROM parking_spaces
         WHERE location_index = ?
           AND (is_occupied = 1 OR state != 'available')
@@ -326,15 +325,14 @@ app.get('/api/admin/overdue/:location_id', async (req, res) => {
 
     const overdue = (result.rows || []).map(row => {
       const mapped = {
-        id: row.id,
-        index: row.index,
+        index: row.index, // Use index as the unique identifier
         locationIndex: row.location_index,
         state: row.state,
         isOccupied: !!row.is_occupied,
         plate: row.plate,
         daysToOccupy: row.days_to_occupy,
         lastUpdate: row.last_update,
-        expiry: row.expiry, // ISO-like string from sqlite/datetime
+        expiry: row.expiry,
         floor: row.floor,
         locationX: row.location_x,
         locationY: row.location_y,
@@ -342,12 +340,10 @@ app.get('/api/admin/overdue/:location_id', async (req, res) => {
         sizeY: row.height,
         exclusive: row.exclusive,
         price: row.price,
-        restrictionStart: row.restriction_start,
-        restrictionEnd: row.restriction_end,
-        restrictionFrequency: row.restriction_frequency
+        restrictionJson: row.restriction_json
       };
 
-      // Log each overdue space to the terminal (TIME format example: 2025-10-24T10:47:03.409Z)
+      // Log each overdue space to the terminal
       try {
         const nowIso = new Date().toISOString();
         console.log(`[OVERDUE] ${nowIso} location=${locationId} space_index=${mapped.index} plate=${mapped.plate || 'N/A'} last_update=${mapped.lastUpdate} expiry=${mapped.expiry}`);
