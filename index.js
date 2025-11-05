@@ -42,6 +42,8 @@ try {
   process.exit(1);
 }
 
+
+
 app.get('/api/auth/verify/:token', async (req, res) => {
   try {
     const { token } = req.params;
@@ -135,7 +137,367 @@ app.use(session({
   }
 }));
 
+function parseDateInput(input) {
+  const trimmed = input.trim();
+  
+  // Check for relative days: "2 days", "1 day"
+  const daysMatch = trimmed.match(/^(\d+)\s*days?$/i);
+  if (daysMatch) {
+    const days = parseInt(daysMatch[1]);
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return date.toISOString().split('T')[0];
+  }
+  
+  // Try parsing as absolute date
+  const date = new Date(trimmed);
+  if (!isNaN(date.getTime())) {
+    return date.toISOString().split('T')[0];
+  }
+  
+  return null;
+}
 
+/**
+ * Calculate days between two dates
+ */
+function daysBetween(startDate, endDate) {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const diffTime = Math.abs(end - start);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  return diffDays;
+}
+
+/**
+ * Check if two date ranges overlap
+ */
+function dateRangesOverlap(start1, end1, start2, end2) {
+  const s1 = new Date(start1);
+  const e1 = new Date(end1);
+  const s2 = new Date(start2);
+  const e2 = new Date(end2);
+  
+  return s1 <= e2 && s2 <= e1;
+}
+
+
+function getRestrictionRanges(restrictionJson, startDate, endDate) {
+  if (!restrictionJson) return [];
+  
+  const ranges = [];
+  
+  try {
+    const restrictions = JSON.parse(restrictionJson);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    // Iterate through each day in the requested range
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const currentDate = new Date(d);
+      const currentMonth = currentDate.getMonth() + 1;
+      const currentDay = currentDate.getDate();
+      const currentDayOfWeek = currentDate.getDay();
+      const year = currentDate.getFullYear();
+      
+      let isRestricted = false;
+      
+      // Check yearly restrictions
+      if (restrictions.yearly) {
+        const monthDay = `${currentMonth}-${currentDay}`;
+        if (restrictions.yearly[monthDay]) {
+          isRestricted = true;
+        }
+      }
+      
+      // Check weekly restrictions
+      if (restrictions.weekly && restrictions.weekly[currentDayOfWeek]) {
+        isRestricted = true;
+      }
+      
+      // Check daily restrictions
+      if (restrictions.daily) {
+        isRestricted = true;
+      }
+      
+      // Check special restrictions
+      if (restrictions.special?.daily) {
+        const dateStr = `${year}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
+        if (restrictions.special.daily[dateStr]) {
+          isRestricted = true;
+        }
+      }
+      
+      if (isRestricted) {
+        ranges.push({
+          start: currentDate.toISOString().split('T')[0],
+          end: currentDate.toISOString().split('T')[0],
+          type: 'restriction'
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error parsing restriction_json:', err);
+  }
+  
+  return ranges;
+}
+
+/**
+ * Get all occupancy date ranges from occupancy_json
+ */
+function getOccupancyRanges(occupancyJson) {
+  if (!occupancyJson) return [];
+  
+  try {
+    const occupancies = JSON.parse(occupancyJson);
+    if (!Array.isArray(occupancies)) return [];
+    
+    return occupancies.map(occ => ({
+      start: occ.startDate,
+      end: occ.endDate,
+      type: 'occupancy',
+      plate: occ.plate,
+      username: occ.username
+    }));
+  } catch (err) {
+    console.error('Error parsing occupancy_json:', err);
+    return [];
+  }
+}
+
+// GET endpoint: Fetch calendar data for a parking space
+app.get('/api/parking/calendar/:index', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  
+  const spaceIndex = req.params.index;
+  const startDate = req.query.start || new Date().toISOString().split('T')[0];
+  const endDate = req.query.end || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  
+  try {
+    const result = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [spaceIndex]
+    });
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Parking space not found' });
+    }
+    
+    const space = result.rows[0];
+    
+    const restrictions = getRestrictionRanges(space.restriction_json, startDate, endDate);
+    const occupancies = getOccupancyRanges(space.occupancy_json);
+    
+    res.json({
+      spaceIndex: space.index,
+      price: space.price,
+      restrictions: restrictions,
+      occupancies: occupancies,
+      events: [
+        ...restrictions.map(r => ({
+          title: 'Restricted',
+          start: r.start,
+          end: r.end,
+          color: '#dc3545',
+          textColor: 'white',
+          type: 'restriction'
+        })),
+        ...occupancies.map(o => ({
+          title: `Occupied by ${o.username}`,
+          start: o.start,
+          end: o.end,
+          color: '#ffc107',
+          textColor: 'black',
+          type: 'occupancy',
+          extendedProps: {
+            plate: o.plate,
+            username: o.username
+          }
+        }))
+      ]
+    });
+  } catch (err) {
+    console.error('Error fetching calendar data:', err);
+    res.status(500).json({ error: 'Failed to fetch calendar data', details: err.message });
+  }
+});
+
+app.post('/api/parking/reserve-calendar', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  
+  const { index, startDate, endDate } = req.body;
+  
+  if (!index || !startDate || !endDate) {
+    return res.status(400).json({ error: 'Missing required fields: index, startDate, endDate' });
+  }
+  
+  // Parse and validate dates
+  const parsedStart = parseDateInput(startDate);
+  const parsedEnd = parseDateInput(endDate);
+  
+  if (!parsedStart || !parsedEnd) {
+    return res.status(400).json({ error: 'Invalid date format' });
+  }
+  
+  const start = new Date(parsedStart);
+  const end = new Date(parsedEnd);
+  
+  if (start >= end) {
+    return res.status(400).json({ error: 'End date must be after start date' });
+  }
+  
+  if (start < new Date(new Date().toISOString().split('T')[0])) {
+    return res.status(400).json({ error: 'Cannot book dates in the past' });
+  }
+  
+  const days = daysBetween(parsedStart, parsedEnd);
+  const clampedDays = Math.max(1, days); // Clamp minimum to 1 day
+  
+  try {
+    const result = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Parking space not found' });
+    }
+    
+    const space = result.rows[0];
+    
+    // Check for restriction overlaps
+    const restrictions = getRestrictionRanges(space.restriction_json, parsedStart, parsedEnd);
+    if (restrictions.length > 0) {
+      return res.status(409).json({
+        error: 'Selected dates overlap with restricted periods',
+        overlaps: restrictions
+      });
+    }
+    
+    // Check for occupancy overlaps
+    const existingOccupancies = getOccupancyRanges(space.occupancy_json);
+    const hasOverlap = existingOccupancies.some(occ => 
+      dateRangesOverlap(parsedStart, parsedEnd, occ.start, occ.end)
+    );
+    
+    if (hasOverlap) {
+      return res.status(409).json({
+        error: 'Selected dates overlap with existing reservations',
+        overlaps: existingOccupancies.filter(occ => 
+          dateRangesOverlap(parsedStart, parsedEnd, occ.start, occ.end)
+        )
+      });
+    }
+    
+    // Check exclusive space permissions
+    const exclusive = space.exclusive?.toLowerCase() || 'normal';
+    const role = user.role?.toLowerCase() || 'user';
+    
+    if (exclusive !== 'normal' && exclusive !== role) {
+      return res.status(403).json({
+        error: `Only ${exclusive.toUpperCase()} users can reserve this parking space`
+      });
+    }
+    
+    // Create new occupancy entry
+    const newOccupancy = {
+      username: user.username,
+      plate: user.liscense_plate,
+      startDate: parsedStart,
+      endDate: parsedEnd,
+      createdAt: new Date().toISOString()
+    };
+    
+    // Update occupancy_json
+    let occupancies = [];
+    if (space.occupancy_json) {
+      try {
+        occupancies = JSON.parse(space.occupancy_json);
+        if (!Array.isArray(occupancies)) occupancies = [];
+      } catch (e) {
+        occupancies = [];
+      }
+    }
+    
+    occupancies.push(newOccupancy);
+    const updatedOccupancyJson = JSON.stringify(occupancies);
+    
+    // Calculate total price
+    const totalPrice = parseFloat(space.price) * clampedDays;
+    
+    // Update parking space
+    await db.execute({
+      sql: `UPDATE parking_spaces 
+            SET occupancy_json = ?, 
+                state = ?, 
+                plate = ?, 
+                days_to_occupy = ?, 
+                last_update = ? 
+            WHERE "index" = ?`,
+      args: [updatedOccupancyJson, 'taken', user.liscense_plate, clampedDays, new Date().toISOString(), index]
+    });
+    
+    // Update user account
+    await db.execute({
+      sql: `UPDATE accounts 
+            SET slot_index_taken = ?, location_taken = ? 
+            WHERE email = ?`,
+      args: [index, space.location_index, user.email]
+    });
+    
+    await updateLocationAvailableSlots(space.location_index);
+    
+    console.log(`Calendar reservation successful: ${user.username} reserved space ${index} from ${parsedStart} to ${parsedEnd}`);
+    
+    res.json({
+      success: true,
+      reservation: {
+        spaceIndex: index,
+        startDate: parsedStart,
+        endDate: parsedEnd,
+        days: clampedDays,
+        totalPrice: totalPrice.toFixed(2),
+        username: user.username,
+        plate: user.liscense_plate
+      }
+    });
+  } catch (err) {
+    console.error('Error creating calendar reservation:', err);
+    res.status(500).json({ error: 'Failed to create reservation', details: err.message });
+  }
+});
+
+// PUT endpoint: Admin update occupancy_json
+app.put('/api/admin/parking/:index/occupancy', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user || user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin privileges required' });
+  }
+  
+  const { index } = req.params;
+  const { occupancy_json } = req.body;
+  
+  try {
+    // Validate JSON
+    const parsed = JSON.parse(occupancy_json);
+    if (!Array.isArray(parsed)) {
+      return res.status(400).json({ error: 'occupancy_json must be an array' });
+    }
+    
+    await db.execute({
+      sql: 'UPDATE parking_spaces SET occupancy_json = ? WHERE "index" = ?',
+      args: [occupancy_json, index]
+    });
+    
+    res.json({ success: true, message: 'Occupancy updated successfully' });
+  } catch (err) {
+    console.error('Error updating occupancy:', err);
+    res.status(500).json({ error: 'Failed to update occupancy', details: err.message });
+  }
+});
 
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -391,22 +753,25 @@ app.post('/api/auth/register', async (req, res) => {
 
     // Create both required tables
     await db.execute(`
-      CREATE TABLE IF NOT EXISTS pending_verifications (
-        email TEXT PRIMARY KEY,
-        verified INTEGER DEFAULT 0,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
+  CREATE TABLE IF NOT EXISTS pending_verifications (
+    email TEXT PRIMARY KEY,
+    verified INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 
-      CREATE TABLE IF NOT EXISTS pending_registrations (
-        email TEXT PRIMARY KEY,
-        username TEXT,
-        password TEXT,
-        liscense_plate TEXT,
-        verified INTEGER DEFAULT 0,
-        verified_at DATETIME,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
+await db.execute(`
+  CREATE TABLE IF NOT EXISTS pending_registrations (
+    email TEXT PRIMARY KEY,
+    username TEXT,
+    password TEXT,
+    liscense_plate TEXT,
+    verified INTEGER DEFAULT 0,
+    verified_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 
     // Add email to pending_verifications (unverified)
     await db.execute({

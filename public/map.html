@@ -8,6 +8,10 @@
   <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.3/themes/base/jquery-ui.css">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  
+  <!-- FullCalendar CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
+  
   <style>
     .parking-space {
       position: absolute;
@@ -30,6 +34,10 @@
       background-color: rgba(40, 167, 69, 0.6);
       border: 2px solid green;
     }
+    .parking-space.state-restricted {
+      background-color: rgba(108, 117, 125, 0.6);
+      border: 2px solid gray;
+    }
     .parking-space.user-occupied {
       background-color: rgba(255, 215, 0, 0.8) !important;
       border: 3px solid gold !important;
@@ -49,12 +57,8 @@
       pointer-events: none;
     }
     @keyframes pulse-gold {
-      0%, 100% {
-        box-shadow: 0 0 15px rgba(255, 215, 0, 0.9);
-      }
-      50% {
-        box-shadow: 0 0 25px rgba(255, 215, 0, 1);
-      }
+      0%, 100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.9); }
+      50% { box-shadow: 0 0 25px rgba(255, 215, 0, 1); }
     }
     .map-container {
       position: absolute;
@@ -67,6 +71,50 @@
       width: 100%;
       height: 100%;
       display: block;
+    }
+    
+    /* Calendar modal styling */
+    .modal-xl {
+      max-width: 1200px;
+    }
+    #calendar {
+      max-width: 100%;
+      margin: 0 auto;
+    }
+    .date-input-helper {
+      font-size: 0.85rem;
+      color: #6c757d;
+      margin-top: 0.25rem;
+    }
+    .overlap-warning {
+      background-color: #f8d7da;
+      border: 1px solid #f5c2c7;
+      border-radius: 0.375rem;
+      padding: 0.75rem;
+      margin-top: 0.5rem;
+    }
+    .legend {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .legend-color {
+      width: 20px;
+      height: 20px;
+      border-radius: 3px;
+    }
+    .price-calculation {
+      background-color: #e7f3ff;
+      border: 1px solid #b3d9ff;
+      border-radius: 0.375rem;
+      padding: 0.75rem;
+      margin-top: 0.5rem;
     }
   </style>
 </head>
@@ -103,9 +151,89 @@
     <button id="floor-down" class="btn btn-primary shadow">▼</button>
   </div>
 
+  <!-- Calendar Reservation Modal -->
+  <div class="modal fade" id="calendarModal" tabindex="-1" aria-labelledby="calendarModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 id="calendarModalLabel" class="modal-title">
+            <i class="fas fa-calendar-alt"></i> Reserve Parking Space
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <!-- Space Info -->
+          <div id="calendar-space-info" class="mb-3"></div>
+          
+          <!-- Legend -->
+          <div class="legend">
+            <div class="legend-item">
+              <div class="legend-color" style="background-color: #dc3545;"></div>
+              <span>Restricted Dates</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background-color: #ffc107;"></div>
+              <span>Occupied Dates</span>
+            </div>
+            <div class="legend-item">
+              <div class="legend-color" style="background-color: #28a745;"></div>
+              <span>Your Selection</span>
+            </div>
+          </div>
+          
+          <!-- Date Selection Form -->
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label for="calendar-start-date" class="form-label">Start Date</label>
+              <input type="date" id="calendar-start-date" class="form-control">
+              <div class="date-input-helper">
+                <i class="fas fa-info-circle"></i> Or enter relative like "2 days"
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label for="calendar-end-date" class="form-label">End Date</label>
+              <input type="date" id="calendar-end-date" class="form-control">
+              <div class="date-input-helper">
+                <i class="fas fa-info-circle"></i> Or enter relative like "5 days"
+              </div>
+            </div>
+          </div>
+          
+          <!-- Price Calculation -->
+          <div id="price-calculation" class="price-calculation" style="display:none;">
+            <h6><i class="fas fa-calculator"></i> Reservation Summary</h6>
+            <p class="mb-1"><strong>Duration:</strong> <span id="calc-days">0</span> days</p>
+            <p class="mb-1"><strong>Price per day:</strong> PHP <span id="calc-price-per-day">0.00</span></p>
+            <p class="mb-0"><strong>Total Price:</strong> PHP <span id="calc-total-price">0.00</span></p>
+          </div>
+          
+          <!-- Overlap Warning -->
+          <div id="overlap-warning" class="overlap-warning" style="display:none;">
+            <h6><i class="fas fa-exclamation-triangle"></i> Date Conflict</h6>
+            <p id="overlap-message" class="mb-0"></p>
+          </div>
+          
+          <!-- Calendar -->
+          <div id="calendar" class="mt-3"></div>
+          
+          <input type="hidden" id="calendar-space-index" value="">
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="calendar-reserve-btn" class="btn btn-success">
+            <i class="fas fa-check"></i> Confirm Reservation
+          </button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://code.jquery.com/ui/1.13.3/jquery-ui.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  
+  <!-- FullCalendar -->
+  <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
 
   <script>
     $(document).ready(function() {
@@ -121,10 +249,14 @@
       let parkingSpaces = [];
       let currentFloorIndex = 0;
       let activeContainerSelector = '#map-container-1';
-      let userLicensePlate = ''; // Store user's license plate
-      let userSlotIndex = null; // Store user's occupied slot index
+      let userLicensePlate = '';
+      let userSlotIndex = null;
+      let calendar = null;
+      let selectedSpace = null;
+      let calendarEvents = [];
+      let selectedStartDate = null;
+      let selectedEndDate = null;
 
-      // Fetch user data to get license plate and slot index
       function fetchUserData(callback) {
         $.ajax({
           url: '/api/auth/user',
@@ -133,7 +265,6 @@
             userLicensePlate = data.liscense_plate || '';
             userSlotIndex = data.slot_index_taken || null;
             console.log('User license plate loaded:', userLicensePlate);
-            console.log('User slot index:', userSlotIndex);
             if (callback) callback();
           },
           error: function(xhr) {
@@ -183,17 +314,12 @@
 
         $container.find('.map-image').attr('src', mapData.maps[index]);
         $('#floor-display').text(`Floor: ${floor}`);
-
-        // clear old
         $container.find('.parking-space').remove();
 
-        // show all visible parking spaces
         parkingSpaces.forEach(space => {
-          // Check if this space is occupied by the current user
           const isUserSpace = (userSlotIndex && space.index == userSlotIndex) || 
                              (userLicensePlate && space.plate === userLicensePlate);
           
-          // Determine car orientation based on space dimensions
           const isHorizontal = space.sizeX > space.sizeY;
           const carImage = isHorizontal ? '/images/map/carHorizontal.png' : '/images/map/carVertical.png';
           
@@ -208,7 +334,6 @@
             height: `${space.sizeY}%`
           });
 
-          // Add car image if space is taken
           if (space.state.toLowerCase() === 'taken') {
             const carImg = $('<img>', {
               'class': 'parking-space-image',
@@ -233,110 +358,274 @@
         $('#floor-down').prop('disabled', currentFloorIndex <= 0);
       }
 
-      $('#floor-up').on('click', function() {
-        if (currentFloorIndex >= mapData.floors.length - 1) return;
+      $('#floor-up, #floor-down').on('click', function() {
+        const isUp = $(this).attr('id') === 'floor-up';
+        if ((isUp && currentFloorIndex >= mapData.floors.length - 1) || (!isUp && currentFloorIndex <= 0)) return;
+        
         const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
-        currentFloorIndex++;
+        currentFloorIndex += isUp ? 1 : -1;
         loadFloor(currentFloorIndex, newContainer);
         $(activeContainerSelector).hide();
         $(newContainer).show();
         activeContainerSelector = newContainer;
       });
 
-      $('#floor-down').on('click', function() {
-        if (currentFloorIndex <= 0) return;
-        const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
-        currentFloorIndex--;
-        loadFloor(currentFloorIndex, newContainer);
-        $(activeContainerSelector).hide();
-        $(newContainer).show();
-        activeContainerSelector = newContainer;
-      });
+      // Initialize FullCalendar
+      function initCalendar() {
+        const calendarEl = document.getElementById('calendar');
+        calendar = new FullCalendar.Calendar(calendarEl, {
+          initialView: 'dayGridMonth',
+          selectable: true,
+          selectMirror: true,
+          headerToolbar: {
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek'
+          },
+          select: function(info) {
+            selectedStartDate = info.startStr;
+            // Subtract 1 day from end because FullCalendar's end is exclusive
+            selectedEndDate = new Date(info.end.getTime() - 86400000).toISOString().split('T')[0];
+            $('#calendar-start-date').val(selectedStartDate);
+            $('#calendar-end-date').val(selectedEndDate);
+            checkOverlaps();
+            calculatePrice();
+          },
+          events: []
+        });
+        calendar.render();
+      }
 
-      // modal interaction
+      // Open calendar modal when clicking a parking space
       $('#map-wrapper').on('click', '.parking-space', function () {
         const idx = $(this).data('index');
         const space = parkingSpaces.find(s => s.index == idx);
         if (!space) return;
 
+        selectedSpace = space;
         const isUserSpace = (userSlotIndex && space.index == userSlotIndex) || 
                            (userLicensePlate && space.plate === userLicensePlate);
 
-        $('#reserveModalLabel').text(`Space #${space.index}${isUserSpace ? ' (Your Space)' : ''}`);
-        $('#reserve-space-info').html(`
-          <p><strong>State:</strong> ${space.state}</p>
-          <p><strong>Type:</strong> ${space.feature}</p>
-          <p><strong>Price:</strong> PHP ${parseFloat(space.price).toFixed(2)}</p>
-          ${isUserSpace ? '<p class="text-warning"><strong><i class="fas fa-star"></i> This is your current parking space</strong></p>' : ''}
+        $('#calendarModalLabel').html(`<i class="fas fa-calendar-alt"></i> Reserve Space #${space.index}${isUserSpace ? ' (Your Space)' : ''}`);
+        $('#calendar-space-info').html(`
+          <div class="alert alert-info">
+            <h6><i class="fas fa-parking"></i> Space Information</h6>
+            <p class="mb-1"><strong>State:</strong> ${space.state}</p>
+            <p class="mb-1"><strong>Type:</strong> ${space.feature}</p>
+            <p class="mb-0"><strong>Price:</strong> PHP ${parseFloat(space.price).toFixed(2)} per day</p>
+            ${isUserSpace ? '<p class="text-warning mt-2 mb-0"><strong><i class="fas fa-star"></i> This is your current parking space</strong></p>' : ''}
+          </div>
         `);
         
-        // Auto-fill license plate and make it readonly
-        $('#reserve-plate').val(userLicensePlate).prop('readonly', true);
-        $('#reserve-days').val('');
-        $('#reserve-index').val(space.index);
-
-        const isAvailable = space.state.toLowerCase() === 'available';
-        if (isAvailable) {
-          $('#reserve-form-row').show();
-          $('#reserve-not-available').hide();
-          $('#reserve-submit').prop('disabled', false);
+        $('#calendar-space-index').val(space.index);
+        $('#calc-price-per-day').text(parseFloat(space.price).toFixed(2));
+        
+        // Reset form
+        const today = new Date().toISOString().split('T')[0];
+        $('#calendar-start-date').val(today);
+        $('#calendar-end-date').val(today);
+        $('#overlap-warning').hide();
+        $('#price-calculation').hide();
+        selectedStartDate = today;
+        selectedEndDate = today;
+        
+        // Load calendar data
+        loadCalendarData(space.index);
+        
+        if (space.state.toLowerCase() !== 'available' && !isUserSpace) {
+          $('#calendar-reserve-btn').prop('disabled', true).html('<i class="fas fa-ban"></i> Space Not Available');
         } else {
-          $('#reserve-form-row').hide();
-          if (isUserSpace) {
-            $('#reserve-not-available').show().html('<i class="fas fa-info-circle"></i> This is your current parking space. You can release it from the home page.');
-          } else {
-            $('#reserve-not-available').show().text('This space is not available for reservation.');
-          }
-          $('#reserve-submit').prop('disabled', true);
+          $('#calendar-reserve-btn').prop('disabled', false).html('<i class="fas fa-check"></i> Confirm Reservation');
         }
 
-        $('#reserveModal').modal('show');
+        $('#calendarModal').modal('show');
       });
 
-      $('#reserve-submit').on('click', function (e) {
-        e.preventDefault();
-        const index = $('#reserve-index').val();
-        const plate = $('#reserve-plate').val().trim();
-        const days = parseInt($('#reserve-days').val(), 10);
+      // Load calendar data from API
+      function loadCalendarData(spaceIndex) {
+        const today = new Date();
+        const threeMonthsLater = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000);
+        
+        $.ajax({
+          url: `/api/parking/calendar/${spaceIndex}`,
+          method: 'GET',
+          data: {
+            start: today.toISOString().split('T')[0],
+            end: threeMonthsLater.toISOString().split('T')[0]
+          },
+          success: function(data) {
+            calendarEvents = data.events || [];
+            if (calendar) {
+              calendar.removeAllEvents();
+              calendar.addEventSource(calendarEvents);
+            }
+            console.log('Calendar loaded:', data);
+          },
+          error: function(xhr) {
+            console.error('Failed to load calendar data:', xhr);
+            calendarEvents = [];
+          }
+        });
+      }
 
-        if (!plate) {
-          alert('License plate is required.');
+      // Check for overlaps
+      function checkOverlaps() {
+        if (!selectedStartDate || !selectedEndDate) {
+          $('#overlap-warning').hide();
+          return false;
+        }
+
+        const overlaps = calendarEvents.filter(event => {
+          return dateRangesOverlap(selectedStartDate, selectedEndDate, event.start, event.end);
+        });
+
+        if (overlaps.length > 0) {
+          const messages = overlaps.map(o => {
+            if (o.type === 'restriction') {
+              return `• Restricted period: ${o.start} to ${o.end}`;
+            } else {
+              return `• Occupied by ${o.extendedProps?.username || 'another user'}: ${o.start} to ${o.end}`;
+            }
+          });
+          
+          $('#overlap-message').html(messages.join('<br>'));
+          $('#overlap-warning').show();
+          $('#calendar-reserve-btn').prop('disabled', true);
+          
+          // Highlight overlaps in red on calendar
+          if (calendar) {
+            calendar.removeAllEvents();
+            calendar.addEventSource(calendarEvents);
+            calendar.addEvent({
+              title: 'CONFLICT',
+              start: selectedStartDate,
+              end: addDays(selectedEndDate, 1),
+              color: '#ff0000',
+              textColor: 'white'
+            });
+          }
+          
+          return true;
+        } else {
+          $('#overlap-warning').hide();
+          $('#calendar-reserve-btn').prop('disabled', false);
+          
+          // Show selection in green
+          if (calendar) {
+            calendar.removeAllEvents();
+            calendar.addEventSource(calendarEvents);
+            calendar.addEvent({
+              title: 'Your Reservation',
+              start: selectedStartDate,
+              end: addDays(selectedEndDate, 1),
+              color: '#28a745',
+              textColor: 'white'
+            });
+          }
+          
+          return false;
+        }
+      }
+
+      // Calculate price
+      function calculatePrice() {
+        if (!selectedStartDate || !selectedEndDate || !selectedSpace) {
+          $('#price-calculation').hide();
           return;
         }
 
-        if (!days || days <= 0) {
-          alert('Please enter a valid number of days.');
+        const start = new Date(selectedStartDate);
+        const end = new Date(selectedEndDate);
+        const diffTime = Math.abs(end - start);
+        const days = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1);
+        const pricePerDay = parseFloat(selectedSpace.price);
+        const totalPrice = pricePerDay * days;
+
+        $('#calc-days').text(days);
+        $('#calc-total-price').text(totalPrice.toFixed(2));
+        $('#price-calculation').show();
+      }
+
+      // Date input change handlers
+      $('#calendar-start-date, #calendar-end-date').on('change', function() {
+        selectedStartDate = $('#calendar-start-date').val();
+        selectedEndDate = $('#calendar-end-date').val();
+        
+        if (selectedStartDate && selectedEndDate) {
+          checkOverlaps();
+          calculatePrice();
+        }
+      });
+
+      // Helper function to add days
+      function addDays(dateStr, days) {
+        const date = new Date(dateStr);
+        date.setDate(date.getDate() + days);
+        return date.toISOString().split('T')[0];
+      }
+
+      // Check date range overlap
+      function dateRangesOverlap(start1, end1, start2, end2) {
+        const s1 = new Date(start1);
+        const e1 = new Date(end1);
+        const s2 = new Date(start2);
+        const e2 = new Date(end2);
+        return s1 <= e2 && s2 <= e1;
+      }
+
+      // Confirm reservation
+      $('#calendar-reserve-btn').on('click', function() {
+        if (!selectedStartDate || !selectedEndDate || !selectedSpace) {
+          alert('Please select start and end dates');
           return;
         }
+
+        const hasOverlap = checkOverlaps();
+        if (hasOverlap) {
+          alert('Cannot reserve: Selected dates overlap with restricted or occupied periods');
+          return;
+        }
+
+        const btn = $(this);
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Reserving...');
 
         $.ajax({
-          url: '/api/parking/reserve',
+          url: '/api/parking/reserve-calendar',
           method: 'POST',
           contentType: 'application/json',
-          data: JSON.stringify({ index, plate, days }),
-          success: function () {
-            // Re-fetch user data to update slot_index_taken
+          data: JSON.stringify({
+            index: selectedSpace.index,
+            startDate: selectedStartDate,
+            endDate: selectedEndDate
+          }),
+          success: function(response) {
+            alert(`Reservation successful!\n\nDuration: ${response.reservation.days} days\nTotal: PHP ${response.reservation.totalPrice}`);
+            $('#calendarModal').modal('hide');
+            
             fetchUserData(function() {
               fetchParkingSpaces(function() {
                 loadFloor(currentFloorIndex, activeContainerSelector);
-                $('#reserveModal').modal('hide');
               });
             });
           },
-          error: function (xhr) {
-            let msg = 'Failed to reserve space';
+          error: function(xhr) {
+            let msg = 'Failed to create reservation';
             try {
-              const json = xhr.responseJSON || (xhr.responseText && JSON.parse(xhr.responseText));
-              if (json && json.error) msg = json.error;
+              const json = xhr.responseJSON;
+              if (json && json.error) {
+                msg = json.error;
+              }
             } catch (e) {
               msg = xhr.statusText || msg;
             }
             alert(msg);
+            btn.prop('disabled', false).html('<i class="fas fa-check"></i> Confirm Reservation');
           }
         });
       });
 
-      // Initialize: Fetch user data first, then maps and parking spaces
+      // Initialize
+      initCalendar();
       fetchUserData(function() {
         fetchMaps(function() {
           fetchParkingSpaces(function() {
@@ -350,38 +639,6 @@
       });
     });
   </script>
-
-  <!-- Reservation Modal -->
-  <div class="modal fade" id="reserveModal" tabindex="-1" aria-labelledby="reserveModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 id="reserveModalLabel" class="modal-title">Reserve Space</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body">
-          <div id="reserve-space-info"></div>
-          <div id="reserve-not-available" class="alert alert-warning" style="display:none;"></div>
-          <div id="reserve-form-row">
-            <div class="mb-2">
-              <label for="reserve-plate" class="form-label">License Plate</label>
-              <input id="reserve-plate" class="form-control" type="text" placeholder="Your license plate" readonly style="background-color: #e9ecef;">
-              <small class="text-muted">Your license plate is automatically loaded from your account.</small>
-            </div>
-            <div class="mb-2">
-              <label for="reserve-days" class="form-label">Days to park</label>
-              <input id="reserve-days" class="form-control" type="number" min="1" value="1">
-            </div>
-          </div>
-          <input type="hidden" id="reserve-index" value="">
-        </div>
-        <div class="modal-footer">
-          <button type="button" id="reserve-submit" class="btn btn-primary">Reserve</button>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
 </body>
 </html>
