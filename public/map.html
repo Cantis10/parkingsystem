@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,10 +9,10 @@
   <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.3/themes/base/jquery-ui.css">
   <link rel="stylesheet" href="/styles.css">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
-  
+
   <!-- FullCalendar CSS -->
   <link href="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.css" rel="stylesheet">
-  
+
   <style>
     .parking-space {
       position: absolute;
@@ -22,22 +23,27 @@
       transition: all 0.2s;
       overflow: hidden;
     }
+
     .parking-space:hover {
       border-color: #ffc107;
       box-shadow: 0 0 10px rgba(255, 193, 7, 0.8);
     }
+
     .parking-space.state-taken {
       background-color: rgba(220, 53, 69, 0.6);
       border: 2px solid red;
     }
+
     .parking-space.state-available {
       background-color: rgba(40, 167, 69, 0.6);
       border: 2px solid green;
     }
+
     .parking-space.state-restricted {
       background-color: rgba(108, 117, 125, 0.6);
       border: 2px solid gray;
     }
+
     .parking-space.user-occupied {
       background-color: rgba(255, 215, 0, 0.8) !important;
       border: 3px solid gold !important;
@@ -45,6 +51,7 @@
       animation: pulse-gold 2s infinite;
       z-index: 15 !important;
     }
+
     .parking-space-image {
       position: absolute;
       top: 3px;
@@ -56,10 +63,19 @@
       object-fit: contain;
       pointer-events: none;
     }
+
     @keyframes pulse-gold {
-      0%, 100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.9); }
-      50% { box-shadow: 0 0 25px rgba(255, 215, 0, 1); }
+
+      0%,
+      100% {
+        box-shadow: 0 0 15px rgba(255, 215, 0, 0.9);
+      }
+
+      50% {
+        box-shadow: 0 0 25px rgba(255, 215, 0, 1);
+      }
     }
+
     .map-container {
       position: absolute;
       top: 0;
@@ -67,25 +83,29 @@
       width: 100%;
       height: 100%;
     }
+
     .map-image {
       width: 100%;
       height: 100%;
       display: block;
     }
-    
+
     /* Calendar modal styling */
     .modal-xl {
       max-width: 1200px;
     }
+
     #calendar {
       max-width: 100%;
       margin: 0 auto;
     }
+
     .date-input-helper {
       font-size: 0.85rem;
       color: #6c757d;
       margin-top: 0.25rem;
     }
+
     .overlap-warning {
       background-color: #f8d7da;
       border: 1px solid #f5c2c7;
@@ -93,22 +113,26 @@
       padding: 0.75rem;
       margin-top: 0.5rem;
     }
+
     .legend {
       display: flex;
       gap: 1rem;
       flex-wrap: wrap;
       margin-bottom: 1rem;
     }
+
     .legend-item {
       display: flex;
       align-items: center;
       gap: 0.5rem;
     }
+
     .legend-color {
       width: 20px;
       height: 20px;
       border-radius: 3px;
     }
+
     .price-calculation {
       background-color: #e7f3ff;
       border: 1px solid #b3d9ff;
@@ -118,6 +142,7 @@
     }
   </style>
 </head>
+
 <body>
 
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top rounded-bottom-lg">
@@ -134,7 +159,8 @@
   <div class="mapContainer">
     <div class="map-main-container">
       <div id="map-wrapper" style="position:relative; padding-top:80px;">
-        <img class="map-sizer" src="https://placehold.co/1200x800/transparent/000?text=Parking%20Map%20Sizer" alt="Map Sizing Element">
+        <img class="map-sizer" src="https://placehold.co/1200x800/transparent/000?text=Parking%20Map%20Sizer"
+          alt="Map Sizing Element">
         <div id="map-container-1" class="map-container">
           <img class="map-image" src="images/map/placeHolder.png" alt="Parking Map">
         </div>
@@ -164,7 +190,7 @@
         <div class="modal-body">
           <!-- Space Info -->
           <div id="calendar-space-info" class="mb-3"></div>
-          
+
           <!-- Legend -->
           <div class="legend">
             <div class="legend-item">
@@ -180,7 +206,7 @@
               <span>Your Selection</span>
             </div>
           </div>
-          
+
           <!-- Date Selection Form -->
           <div class="row mb-3">
             <div class="col-md-6">
@@ -198,7 +224,7 @@
               </div>
             </div>
           </div>
-          
+
           <!-- Price Calculation -->
           <div id="price-calculation" class="price-calculation" style="display:none;">
             <h6><i class="fas fa-calculator"></i> Reservation Summary</h6>
@@ -206,23 +232,26 @@
             <p class="mb-1"><strong>Price per day:</strong> PHP <span id="calc-price-per-day">0.00</span></p>
             <p class="mb-0"><strong>Total Price:</strong> PHP <span id="calc-total-price">0.00</span></p>
           </div>
-          
+
           <!-- Overlap Warning -->
           <div id="overlap-warning" class="overlap-warning" style="display:none;">
             <h6><i class="fas fa-exclamation-triangle"></i> Date Conflict</h6>
             <p id="overlap-message" class="mb-0"></p>
           </div>
-          
+
           <!-- Calendar -->
           <div id="calendar" class="mt-3"></div>
-          
+
           <input type="hidden" id="calendar-space-index" value="">
         </div>
         <div class="modal-footer">
           <button type="button" id="calendar-reserve-btn" class="btn btn-success">
             <i class="fas fa-check"></i> Confirm Reservation
           </button>
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="calendar-cancel-btn" class="btn btn-danger" style="display:none;">
+            <i class="fas fa-times"></i> Cancel Reservation
+          </button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
         </div>
       </div>
     </div>
@@ -231,12 +260,12 @@
   <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
   <script src="https://code.jquery.com/ui/1.13.3/jquery-ui.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  
+
   <!-- FullCalendar -->
   <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.10/index.global.min.js"></script>
 
   <script>
-    $(document).ready(function() {
+    $(document).ready(function () {
       const urlParams = new URLSearchParams(window.location.search);
       const locationId = urlParams.get('location_id');
       if (!locationId) {
@@ -261,13 +290,13 @@
         $.ajax({
           url: '/api/auth/user',
           method: 'GET',
-          success: function(data) {
+          success: function (data) {
             userLicensePlate = data.liscense_plate || '';
             userSlotIndex = data.slot_index_taken || null;
             console.log('User license plate loaded:', userLicensePlate);
             if (callback) callback();
           },
-          error: function(xhr) {
+          error: function (xhr) {
             console.error('Failed to fetch user data:', xhr);
             alert('Failed to load user information. Please log in again.');
             window.location.href = '/login';
@@ -280,12 +309,12 @@
           url: `/api/maps/${locationId}`,
           method: 'GET',
           dataType: 'json',
-          success: function(data) {
+          success: function (data) {
             mapData.maps = data.map(m => `/images/map/${m.floorsImageIndex}`);
             mapData.floors = data.map(m => m.floor);
             if (callback) callback();
           },
-          error: function(xhr, status, error) {
+          error: function (xhr, status, error) {
             console.error('Failed to fetch maps:', error);
             alert('Failed to load maps for this location.');
           }
@@ -296,11 +325,11 @@
         $.ajax({
           url: `/api/parking/${locationId}`,
           method: 'GET',
-          success: function(data) {
+          success: function (data) {
             parkingSpaces = data;
             if (callback) callback();
           },
-          error: function(xhr) {
+          error: function (xhr) {
             console.error('Failed to fetch parking spaces:', xhr);
           }
         });
@@ -317,12 +346,12 @@
         $container.find('.parking-space').remove();
 
         parkingSpaces.forEach(space => {
-          const isUserSpace = (userSlotIndex && space.index == userSlotIndex) || 
-                             (userLicensePlate && space.plate === userLicensePlate);
-          
+          const isUserSpace = (userSlotIndex && space.index == userSlotIndex) ||
+            (userLicensePlate && space.plate === userLicensePlate);
+
           const isHorizontal = space.sizeX > space.sizeY;
           const carImage = isHorizontal ? '/images/map/carHorizontal.png' : '/images/map/carVertical.png';
-          
+
           const spaceDiv = $('<div>', {
             'class': `parking-space state-${space.state} ${isUserSpace ? 'user-occupied' : ''}`,
             'data-index': space.index,
@@ -358,10 +387,10 @@
         $('#floor-down').prop('disabled', currentFloorIndex <= 0);
       }
 
-      $('#floor-up, #floor-down').on('click', function() {
+      $('#floor-up, #floor-down').on('click', function () {
         const isUp = $(this).attr('id') === 'floor-up';
         if ((isUp && currentFloorIndex >= mapData.floors.length - 1) || (!isUp && currentFloorIndex <= 0)) return;
-        
+
         const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
         currentFloorIndex += isUp ? 1 : -1;
         loadFloor(currentFloorIndex, newContainer);
@@ -382,7 +411,7 @@
             center: 'title',
             right: 'dayGridMonth,timeGridWeek'
           },
-          select: function(info) {
+          select: function (info) {
             selectedStartDate = info.startStr;
             // Subtract 1 day from end because FullCalendar's end is exclusive
             selectedEndDate = new Date(info.end.getTime() - 86400000).toISOString().split('T')[0];
@@ -403,35 +432,50 @@
         if (!space) return;
 
         selectedSpace = space;
-        const isUserSpace = (userSlotIndex && space.index == userSlotIndex) || 
-                           (userLicensePlate && space.plate === userLicensePlate);
+        const isUserSpace = (userSlotIndex && space.index == userSlotIndex) ||
+          (userLicensePlate && space.plate === userLicensePlate);
 
-        $('#calendarModalLabel').html(`<i class="fas fa-calendar-alt"></i> Reserve Space #${space.index}${isUserSpace ? ' (Your Space)' : ''}`);
+        $('#calendarModalLabel').html(`<i class="fas fa-calendar-alt"></i> ${isUserSpace ? 'Your' : 'Reserve'} Space #${space.index}`);
+
         $('#calendar-space-info').html(`
-          <div class="alert alert-info">
-            <h6><i class="fas fa-parking"></i> Space Information</h6>
-            <p class="mb-1"><strong>State:</strong> ${space.state}</p>
-            <p class="mb-1"><strong>Type:</strong> ${space.feature}</p>
-            <p class="mb-0"><strong>Price:</strong> PHP ${parseFloat(space.price).toFixed(2)} per day</p>
-            ${isUserSpace ? '<p class="text-warning mt-2 mb-0"><strong><i class="fas fa-star"></i> This is your current parking space</strong></p>' : ''}
-          </div>
-        `);
-        
+    <div class="alert ${isUserSpace ? 'alert-warning' : 'alert-info'}">
+      <h6><i class="fas fa-parking"></i> Space Information</h6>
+      <p class="mb-1"><strong>State:</strong> ${space.state}</p>
+      <p class="mb-1"><strong>Type:</strong> ${space.feature}</p>
+      <p class="mb-0"><strong>Price:</strong> PHP ${parseFloat(space.price).toFixed(2)} per day</p>
+      ${isUserSpace ? '<p class="text-warning mt-2 mb-0"><strong><i class="fas fa-star"></i> This is your current parking space</strong></p>' : ''}
+    </div>
+  `);
+
         $('#calendar-space-index').val(space.index);
         $('#calc-price-per-day').text(parseFloat(space.price).toFixed(2));
-        
-        // Reset form
-        const today = new Date().toISOString().split('T')[0];
-        $('#calendar-start-date').val(today);
-        $('#calendar-end-date').val(today);
-        $('#overlap-warning').hide();
-        $('#price-calculation').hide();
-        selectedStartDate = today;
-        selectedEndDate = today;
-        
-        // Load calendar data
-        loadCalendarData(space.index);
-        
+
+        // Show/hide appropriate buttons based on space ownership
+        if (isUserSpace) {
+          $('#calendar-reserve-btn').hide();
+          $('#calendar-cancel-btn').show();
+          $('.row.mb-3').hide(); // Hide date selection
+          $('#price-calculation').hide();
+          $('#calendar').hide();
+        } else {
+          $('#calendar-reserve-btn').show();
+          $('#calendar-cancel-btn').hide();
+          $('.row.mb-3').show();
+          $('#calendar').show();
+        }
+
+        // Reset form if not user's space
+        if (!isUserSpace) {
+          const today = new Date().toISOString().split('T')[0];
+          $('#calendar-start-date').val(today);
+          $('#calendar-end-date').val(today);
+          $('#overlap-warning').hide();
+          $('#price-calculation').hide();
+          selectedStartDate = today;
+          selectedEndDate = today;
+          loadCalendarData(space.index);
+        }
+
         if (space.state.toLowerCase() !== 'available' && !isUserSpace) {
           $('#calendar-reserve-btn').prop('disabled', true).html('<i class="fas fa-ban"></i> Space Not Available');
         } else {
@@ -441,11 +485,57 @@
         $('#calendarModal').modal('show');
       });
 
+      $('#calendar-cancel-btn').on('click', function () {
+        const btn = $(this);
+        const spaceIndex = $('#calendar-space-index').val();
+
+        if (!confirm('Are you sure you want to cancel your reservation?')) {
+          return;
+        }
+
+        btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Canceling...');
+
+        $.ajax({
+          url: '/api/parking/cancel-calendar',
+          method: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({
+            index: spaceIndex
+          }),
+          success: function (response) {
+            $('#calendarModal').modal('hide');
+
+            // Refresh the map data
+            fetchUserData(function () {
+              fetchParkingSpaces(function () {
+                loadFloor(currentFloorIndex, activeContainerSelector);
+                // Also refresh calendar data if needed
+                loadCalendarData(spaceIndex);
+              });
+            });
+
+            alert('Reservation canceled successfully');
+          },
+          error: function (xhr) {
+            let msg = 'Failed to cancel reservation';
+            try {
+              const json = xhr.responseJSON;
+              if (json && json.error) msg = json.error;
+            } catch (e) {
+              msg = xhr.statusText || msg;
+            }
+            alert(msg);
+            btn.prop('disabled', false)
+              .html('<i class="fas fa-times"></i> Cancel Reservation');
+          }
+        });
+      });
+
       // Load calendar data from API
       function loadCalendarData(spaceIndex) {
         const today = new Date();
         const threeMonthsLater = new Date(today.getTime() + 90 * 24 * 60 * 60 * 1000);
-        
+
         $.ajax({
           url: `/api/parking/calendar/${spaceIndex}`,
           method: 'GET',
@@ -453,63 +543,111 @@
             start: today.toISOString().split('T')[0],
             end: threeMonthsLater.toISOString().split('T')[0]
           },
-          success: function(data) {
-            calendarEvents = data.events || [];
+          success: function (data) {
+            console.log('Raw calendar data:', data);
+
+            // Process events to ensure proper end dates
+            calendarEvents = (data.events || []).map(event => {
+              // Create a new event object with processed dates
+              const processedEvent = {
+                ...event,
+                start: event.start,
+                // Add 1 day to end date since FullCalendar uses exclusive end dates
+                end: new Date(new Date(event.end).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+              };
+
+              console.log('Processed event:', {
+                title: processedEvent.title,
+                start: processedEvent.start,
+                end: processedEvent.end,
+                type: processedEvent.type
+              });
+
+              return processedEvent;
+            });
+
             if (calendar) {
               calendar.removeAllEvents();
               calendar.addEventSource(calendarEvents);
             }
-            console.log('Calendar loaded:', data);
           },
-          error: function(xhr) {
+          error: function (xhr) {
             console.error('Failed to load calendar data:', xhr);
             calendarEvents = [];
           }
         });
       }
 
-      // Check for overlaps
       function checkOverlaps() {
         if (!selectedStartDate || !selectedEndDate) {
           $('#overlap-warning').hide();
           return false;
         }
 
+        console.log('Checking overlaps for dates:', {
+          start: selectedStartDate,
+          end: selectedEndDate
+        });
+
         const overlaps = calendarEvents.filter(event => {
-          return dateRangesOverlap(selectedStartDate, selectedEndDate, event.start, event.end);
+          // Normalize event end date by subtracting the extra day we added for display
+          const eventEnd = new Date(event.end);
+          eventEnd.setDate(eventEnd.getDate() - 1);
+          const normalizedEventEnd = eventEnd.toISOString().split('T')[0];
+
+          const hasOverlap = dateRangesOverlap(
+            selectedStartDate,
+            selectedEndDate,
+            event.start,
+            normalizedEventEnd
+          );
+
+          console.log('Checking event:', {
+            eventTitle: event.title,
+            eventStart: event.start,
+            eventEnd: normalizedEventEnd,
+            hasOverlap: hasOverlap
+          });
+
+          return hasOverlap;
         });
 
         if (overlaps.length > 0) {
+          // ... rest of overlap handling code ...
           const messages = overlaps.map(o => {
+            // Normalize display end date
+            const eventEnd = new Date(o.end);
+            eventEnd.setDate(eventEnd.getDate() - 1);
+            const displayEnd = eventEnd.toISOString().split('T')[0];
+
             if (o.type === 'restriction') {
-              return `• Restricted period: ${o.start} to ${o.end}`;
+              return `• Restricted period: ${o.start} to ${displayEnd}`;
             } else {
-              return `• Occupied by ${o.extendedProps?.username || 'another user'}: ${o.start} to ${o.end}`;
+              return `• Occupied by ${o.extendedProps?.username || 'another user'}: ${o.start} to ${displayEnd}`;
             }
           });
-          
+
           $('#overlap-message').html(messages.join('<br>'));
           $('#overlap-warning').show();
           $('#calendar-reserve-btn').prop('disabled', true);
-          
-          // Highlight overlaps in red on calendar
+
           if (calendar) {
             calendar.removeAllEvents();
             calendar.addEventSource(calendarEvents);
             calendar.addEvent({
               title: 'CONFLICT',
               start: selectedStartDate,
-              end: addDays(selectedEndDate, 1),
+              end: addDays(selectedEndDate, 1), // Add day for exclusive end date
               color: '#ff0000',
               textColor: 'white'
             });
           }
-          
+
           return true;
         } else {
           $('#overlap-warning').hide();
           $('#calendar-reserve-btn').prop('disabled', false);
-          
+
           // Show selection in green
           if (calendar) {
             calendar.removeAllEvents();
@@ -522,7 +660,7 @@
               textColor: 'white'
             });
           }
-          
+
           return false;
         }
       }
@@ -547,10 +685,10 @@
       }
 
       // Date input change handlers
-      $('#calendar-start-date, #calendar-end-date').on('change', function() {
+      $('#calendar-start-date, #calendar-end-date').on('change', function () {
         selectedStartDate = $('#calendar-start-date').val();
         selectedEndDate = $('#calendar-end-date').val();
-        
+
         if (selectedStartDate && selectedEndDate) {
           checkOverlaps();
           calculatePrice();
@@ -574,7 +712,7 @@
       }
 
       // Confirm reservation
-      $('#calendar-reserve-btn').on('click', function() {
+      $('#calendar-reserve-btn').on('click', function () {
         if (!selectedStartDate || !selectedEndDate || !selectedSpace) {
           alert('Please select start and end dates');
           return;
@@ -598,17 +736,17 @@
             startDate: selectedStartDate,
             endDate: selectedEndDate
           }),
-          success: function(response) {
+          success: function (response) {
             alert(`Reservation successful!\n\nDuration: ${response.reservation.days} days\nTotal: PHP ${response.reservation.totalPrice}`);
             $('#calendarModal').modal('hide');
-            
-            fetchUserData(function() {
-              fetchParkingSpaces(function() {
+
+            fetchUserData(function () {
+              fetchParkingSpaces(function () {
                 loadFloor(currentFloorIndex, activeContainerSelector);
               });
             });
           },
-          error: function(xhr) {
+          error: function (xhr) {
             let msg = 'Failed to create reservation';
             try {
               const json = xhr.responseJSON;
@@ -626,9 +764,9 @@
 
       // Initialize
       initCalendar();
-      fetchUserData(function() {
-        fetchMaps(function() {
-          fetchParkingSpaces(function() {
+      fetchUserData(function () {
+        fetchMaps(function () {
+          fetchParkingSpaces(function () {
             if (mapData.floors.length > 0) {
               loadFloor(currentFloorIndex, activeContainerSelector);
             } else {
@@ -641,4 +779,5 @@
   </script>
 
 </body>
+
 </html>

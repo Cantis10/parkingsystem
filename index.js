@@ -519,6 +519,11 @@ app.get('/homepage', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'homepage.html'));
 });
 
+app.get('/home-logout', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'home-logout.html'));
+});
+
+
 // Auth middleware
 function requireAuth(req, res, next) {
   const token = req.cookies?.token;
@@ -543,6 +548,108 @@ function getUserFromToken(req) {
     return null;
   }
 }
+
+app.post('/api/parking/cancel-calendar', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { index } = req.body;
+  if (!index) {
+    return res.status(400).json({ error: 'Missing required field: index' });
+  }
+
+  try {
+    // Get parking space data
+    const result = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Parking space not found' });
+    }
+
+    const space = result.rows[0];
+    let occupancies = [];
+
+    // Parse existing occupancies
+    if (space.occupancy_json) {
+      try {
+        occupancies = JSON.parse(space.occupancy_json);
+        if (!Array.isArray(occupancies)) occupancies = [];
+      } catch (e) {
+        console.error('Error parsing occupancy_json:', e);
+        occupancies = [];
+      }
+    }
+
+    // Filter out user's reservations
+    const updatedOccupancies = occupancies.filter(occ => 
+      occ.username !== user.username && occ.plate !== user.liscense_plate
+    );
+
+    // If no changes were made, user didn't have a reservation
+    if (occupancies.length === updatedOccupancies.length) {
+      return res.status(404).json({ error: 'No reservation found for this user' });
+    }
+
+    // Update parking space state if no remaining occupancies
+    const newState = updatedOccupancies.length === 0 ? 'available' : 'taken';
+    const updatedOccupancyJson = JSON.stringify(updatedOccupancies);
+
+    // Update parking space
+    await db.execute({
+      sql: `UPDATE parking_spaces 
+            SET occupancy_json = ?, 
+                state = ?,
+                plate = CASE WHEN ? = 'available' THEN NULL ELSE plate END,
+                days_to_occupy = CASE WHEN ? = 'available' THEN 0 ELSE days_to_occupy END,
+                last_update = ? 
+            WHERE "index" = ?`,
+      args: [
+        updatedOccupancyJson, 
+        newState,
+        newState,
+        newState,
+        new Date().toISOString(),
+        index
+      ]
+    });
+
+    // Clear user's parking assignment if they have no other reservations
+    await db.execute({
+      sql: `UPDATE accounts 
+            SET slot_index_taken = CASE 
+                WHEN email = ? AND slot_index_taken = ? THEN NULL 
+                ELSE slot_index_taken END,
+                location_taken = CASE 
+                WHEN email = ? AND slot_index_taken = ? THEN NULL 
+                ELSE location_taken END
+            WHERE email = ?`,
+      args: [user.email, index, user.email, index, user.email]
+    });
+
+    // Update location available slots
+    await updateLocationAvailableSlots(space.location_index);
+
+    console.log(`Calendar reservation canceled: User ${user.username} canceled space ${index}`);
+
+    res.json({
+      success: true,
+      message: 'Reservation canceled successfully'
+    });
+
+  } catch (err) {
+    console.error('Error canceling calendar reservation:', err);
+    res.status(500).json({ 
+      error: 'Failed to cancel reservation', 
+      details: err.message 
+    });
+  }
+});
+
 
 // ...existing code...
 app.get('/api/locations', async (req, res) => {
