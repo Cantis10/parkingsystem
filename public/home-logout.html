@@ -12,13 +12,29 @@
     <link rel="stylesheet" href="/styles.css">
 
     <style>
-        /* Optional: make modal popup look cleaner */
-        #guestDialog {
-            text-align: center;
-            font-size: 1.1rem;
+        body {
+            background-color: #f8f9fa;
         }
+
+        .parking-container {
+            margin-top: 100px;
+        }
+
+        .parking-card {
+            cursor: pointer;
+            transition: transform 0.2s ease-in-out;
+        }
+
+        .parking-card:hover {
+            transform: scale(1.03);
+        }
+
         .ui-dialog-titlebar-close {
-            display: none; /* hide the X button for cleaner look */
+            display: none;
+        }
+
+        .ui-widget-overlay {
+            background: rgba(0, 0, 0, 0.5);
         }
     </style>
 </head>
@@ -27,11 +43,9 @@
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top rounded-bottom-lg">
         <div class="container-fluid">
-            <div id="backButton" style="display: none;">
-                <a href="/home" class="btn btn-outline-light d-flex align-items-center me-auto" style="border: none;">
-                    <i class="fas fa-caret-left fa-lg me-1"></i> Back
-                </a>
-            </div>
+            <a href="/home" class="btn btn-outline-light d-flex align-items-center me-auto" style="border: none;">
+                <i class="fas fa-caret-left fa-lg me-1"></i> Back
+            </a>
 
             <div class="ms-auto">
                 <a class="navbar-brand d-flex align-items-center" href="#">
@@ -41,34 +55,44 @@
         </div>
     </nav>
 
-    <!-- Example Demo Cards (non-logged-in users click these) -->
-    <div class="container mt-5 pt-5">
-        <h2 class="text-center mb-4">Available Parking Spaces</h2>
-        <div class="row justify-content-center">
-            <div class="col-md-3">
-                <div class="card parking-card mb-3" style="cursor: pointer;">
-                    <div class="card-body text-center">
-                        <i class="fas fa-parking fa-3x mb-2 text-primary"></i>
-                        <h5>Spot A1</h5>
-                        <p>Tap to reserve</p>
+    <!-- Main Parking Map -->
+    <div class="container parking-container">
+        <div class="row">
+            <div class="col-md-4 mb-4">
+                <div class="card parking-card shadow-sm">
+                    <img src="/images/parking1.jpg" class="card-img-top" alt="Parking Spot 1">
+                    <div class="card-body">
+                        <h5 class="card-title">Parking Spot 1</h5>
+                        <p class="card-text">Near Entrance</p>
                     </div>
                 </div>
             </div>
-            <div class="col-md-3">
-                <div class="card parking-card mb-3" style="cursor: pointer;">
-                    <div class="card-body text-center">
-                        <i class="fas fa-parking fa-3x mb-2 text-primary"></i>
-                        <h5>Spot B2</h5>
-                        <p>Tap to reserve</p>
+
+            <div class="col-md-4 mb-4">
+                <div class="card parking-card shadow-sm">
+                    <img src="/images/parking2.jpg" class="card-img-top" alt="Parking Spot 2">
+                    <div class="card-body">
+                        <h5 class="card-title">Parking Spot 2</h5>
+                        <p class="card-text">Covered Area</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4 mb-4">
+                <div class="card parking-card shadow-sm">
+                    <img src="/images/parking3.jpg" class="card-img-top" alt="Parking Spot 3">
+                    <div class="card-body">
+                        <h5 class="card-title">Parking Spot 3</h5>
+                        <p class="card-text">Open Lot</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Guest Popup Dialog -->
-    <div id="guestDialog" title="Guest Access" style="display:none;">
-        <p>Create an account to park!</p>
+    <!-- Hidden Popup -->
+    <div id="loginPrompt" title="Notice" style="display: none; text-align: center;">
+        <p class="fs-5">Create an account to park!</p>
     </div>
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
@@ -77,41 +101,26 @@
 
     <script>
         $(document).ready(function () {
-            // Check if user is logged in
-            let isLoggedIn = false;
+            // Remove settings icon if present
+            $('.settings-icon').remove();
 
-            $.get('/api/auth/check', function (data) {
-                isLoggedIn = data.isLoggedIn;
-                if (isLoggedIn) {
-                    $('#backButton').show();
-                }
-            });
-
-            // Define popup
-            $("#guestDialog").dialog({
+            // Initialize popup dialog
+            $("#loginPrompt").dialog({
                 autoOpen: false,
                 modal: true,
                 buttons: {
-                    "Login / Register": function () {
+                    "Login": function () {
                         window.location.href = '/login';
                     },
                     "Close": function () {
                         $(this).dialog("close");
                     }
-                },
-                open: function () {
-                    $('.ui-widget-overlay').css({ opacity: 0.5, background: '#000' });
                 }
             });
 
-            // Handle clicks on cards
-            $('.parking-card').on('click', function () {
-                if (!isLoggedIn) {
-                    $("#guestDialog").dialog("open");
-                } else {
-                    // If logged in, you could redirect to parking details or reservation
-                    window.location.href = '/parkingspot/' + $(this).find('h5').text();
-                }
+            // Bind click to all cards
+            $(".parking-card").click(function () {
+                $("#loginPrompt").dialog("open");
             });
         });
     </script>
