@@ -185,14 +185,21 @@ function dateRangesOverlap(start1, end1, start2, end2) {
 
 
 function getRestrictionRanges(restrictionJson, startDate, endDate) {
-  if (!restrictionJson) return [];
+  if (!restrictionJson) {
+    console.log('No restriction_json provided');
+    return [];
+  }
   
   const ranges = [];
   
   try {
     const restrictions = JSON.parse(restrictionJson);
+    console.log('Parsed restrictions:', restrictions);
+    
     const start = new Date(startDate);
     const end = new Date(endDate);
+    
+    console.log('Checking restrictions from', startDate, 'to', endDate);
     
     // Iterate through each day in the requested range
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
@@ -203,23 +210,27 @@ function getRestrictionRanges(restrictionJson, startDate, endDate) {
       const year = currentDate.getFullYear();
       
       let isRestricted = false;
+      let restrictionReason = [];
       
       // Check yearly restrictions
       if (restrictions.yearly) {
         const monthDay = `${currentMonth}-${currentDay}`;
         if (restrictions.yearly[monthDay]) {
           isRestricted = true;
+          restrictionReason.push(`yearly-${monthDay}`);
         }
       }
       
       // Check weekly restrictions
       if (restrictions.weekly && restrictions.weekly[currentDayOfWeek]) {
         isRestricted = true;
+        restrictionReason.push(`weekly-${currentDayOfWeek}`);
       }
       
       // Check daily restrictions
       if (restrictions.daily) {
         isRestricted = true;
+        restrictionReason.push('daily');
       }
       
       // Check special restrictions
@@ -227,17 +238,22 @@ function getRestrictionRanges(restrictionJson, startDate, endDate) {
         const dateStr = `${year}-${String(currentMonth).padStart(2, '0')}-${String(currentDay).padStart(2, '0')}`;
         if (restrictions.special.daily[dateStr]) {
           isRestricted = true;
+          restrictionReason.push(`special-${dateStr}`);
         }
       }
       
       if (isRestricted) {
+        const dateStr = currentDate.toISOString().split('T')[0];
+        console.log(`Found restriction on ${dateStr}: ${restrictionReason.join(', ')}`);
         ranges.push({
-          start: currentDate.toISOString().split('T')[0],
-          end: currentDate.toISOString().split('T')[0],
+          start: dateStr,
+          end: dateStr,
           type: 'restriction'
         });
       }
     }
+    
+    console.log(`Total restriction ranges found: ${ranges.length}`);
   } catch (err) {
     console.error('Error parsing restriction_json:', err);
   }
@@ -277,6 +293,8 @@ app.get('/api/parking/calendar/:index', async (req, res) => {
   const startDate = req.query.start || new Date().toISOString().split('T')[0];
   const endDate = req.query.end || new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
   
+  console.log(`[Calendar API] Fetching calendar for space ${spaceIndex} from ${startDate} to ${endDate}`);
+  
   try {
     const result = await db.execute({
       sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
@@ -288,37 +306,46 @@ app.get('/api/parking/calendar/:index', async (req, res) => {
     }
     
     const space = result.rows[0];
+    console.log(`[Calendar API] Space ${spaceIndex} restriction_json:`, space.restriction_json);
+    console.log(`[Calendar API] Space ${spaceIndex} occupancy_json:`, space.occupancy_json);
     
     const restrictions = getRestrictionRanges(space.restriction_json, startDate, endDate);
     const occupancies = getOccupancyRanges(space.occupancy_json);
+    
+    console.log(`[Calendar API] Found ${restrictions.length} restriction ranges`);
+    console.log(`[Calendar API] Found ${occupancies.length} occupancy ranges`);
+    
+    const events = [
+      ...restrictions.map(r => ({
+        title: 'Restricted',
+        start: r.start,
+        end: r.end,
+        color: '#dc3545',
+        textColor: 'white',
+        type: 'restriction'
+      })),
+      ...occupancies.map(o => ({
+        title: `Occupied by ${o.username}`,
+        start: o.start,
+        end: o.end,
+        color: '#ffc107',
+        textColor: 'black',
+        type: 'occupancy',
+        extendedProps: {
+          plate: o.plate,
+          username: o.username
+        }
+      }))
+    ];
+    
+    console.log(`[Calendar API] Returning ${events.length} total events`);
     
     res.json({
       spaceIndex: space.index,
       price: space.price,
       restrictions: restrictions,
       occupancies: occupancies,
-      events: [
-        ...restrictions.map(r => ({
-          title: 'Restricted',
-          start: r.start,
-          end: r.end,
-          color: '#dc3545',
-          textColor: 'white',
-          type: 'restriction'
-        })),
-        ...occupancies.map(o => ({
-          title: `Occupied by ${o.username}`,
-          start: o.start,
-          end: o.end,
-          color: '#ffc107',
-          textColor: 'black',
-          type: 'occupancy',
-          extendedProps: {
-            plate: o.plate,
-            username: o.username
-          }
-        }))
-      ]
+      events: events
     });
   } catch (err) {
     console.error('Error fetching calendar data:', err);
@@ -553,102 +580,83 @@ function getUserFromToken(req) {
 
 app.post('/api/parking/cancel-calendar', async (req, res) => {
   const user = getUserFromToken(req);
-  if (!user) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-
+  if (!user) return res.status(401).json({ error: 'Not authenticated' });
+  
   const { index } = req.body;
+  
   if (!index) {
-    return res.status(400).json({ error: 'Missing required field: index' });
+    return res.status(400).json({ error: 'Space index is required' });
   }
-
+  
   try {
-    // Get parking space data
     const result = await db.execute({
       sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
       args: [index]
     });
-
+    
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Parking space not found' });
     }
-
+    
     const space = result.rows[0];
+    
+    // Verify user owns this reservation
+    if (space.plate !== user.liscense_plate) {
+      return res.status(403).json({ error: 'You can only cancel your own reservations' });
+    }
+    
+    // Parse occupancy_json and remove user's reservation
     let occupancies = [];
-
-    // Parse existing occupancies
     if (space.occupancy_json) {
       try {
         occupancies = JSON.parse(space.occupancy_json);
-        if (!Array.isArray(occupancies)) occupancies = [];
+        if (Array.isArray(occupancies)) {
+          // Filter out the user's reservation
+          occupancies = occupancies.filter(occ => 
+            occ.username !== user.username || occ.plate !== user.liscense_plate
+          );
+        }
       } catch (e) {
-        console.error('Error parsing occupancy_json:', e);
         occupancies = [];
       }
     }
-
-    // Filter out user's reservations
-    const updatedOccupancies = occupancies.filter(occ => 
-      occ.username !== user.username && occ.plate !== user.liscense_plate
-    );
-
-    // If no changes were made, user didn't have a reservation
-    if (occupancies.length === updatedOccupancies.length) {
-      return res.status(404).json({ error: 'No reservation found for this user' });
-    }
-
-    // Update parking space state if no remaining occupancies
-    const newState = updatedOccupancies.length === 0 ? 'available' : 'taken';
-    const updatedOccupancyJson = JSON.stringify(updatedOccupancies);
-
-    // Update parking space
+    
+    const updatedOccupancyJson = JSON.stringify(occupancies);
+    
+    // Update parking space - set to available if no more occupancies
+    const newState = occupancies.length > 0 ? 'taken' : 'available';
+    const newPlate = occupancies.length > 0 ? occupancies[0].plate : null;
+    
     await db.execute({
       sql: `UPDATE parking_spaces 
             SET occupancy_json = ?, 
-                state = ?,
-                plate = CASE WHEN ? = 'available' THEN NULL ELSE plate END,
-                days_to_occupy = CASE WHEN ? = 'available' THEN 0 ELSE days_to_occupy END,
+                state = ?, 
+                plate = ?,
+                days_to_occupy = 0,
                 last_update = ? 
             WHERE "index" = ?`,
-      args: [
-        updatedOccupancyJson, 
-        newState,
-        newState,
-        newState,
-        new Date().toISOString(),
-        index
-      ]
+      args: [updatedOccupancyJson, newState, newPlate, new Date().toISOString(), index]
     });
-
-    // Clear user's parking assignment if they have no other reservations
+    
+    // Update user account
     await db.execute({
       sql: `UPDATE accounts 
-            SET slot_index_taken = CASE 
-                WHEN email = ? AND slot_index_taken = ? THEN NULL 
-                ELSE slot_index_taken END,
-                location_taken = CASE 
-                WHEN email = ? AND slot_index_taken = ? THEN NULL 
-                ELSE location_taken END
+            SET slot_index_taken = NULL, location_taken = NULL 
             WHERE email = ?`,
-      args: [user.email, index, user.email, index, user.email]
+      args: [user.email]
     });
-
-    // Update location available slots
+    
     await updateLocationAvailableSlots(space.location_index);
-
-    console.log(`Calendar reservation canceled: User ${user.username} canceled space ${index}`);
-
+    
+    console.log(`Calendar reservation canceled: ${user.username} canceled space ${index}`);
+    
     res.json({
       success: true,
       message: 'Reservation canceled successfully'
     });
-
   } catch (err) {
     console.error('Error canceling calendar reservation:', err);
-    res.status(500).json({ 
-      error: 'Failed to cancel reservation', 
-      details: err.message 
-    });
+    res.status(500).json({ error: 'Failed to cancel reservation', details: err.message });
   }
 });
 
