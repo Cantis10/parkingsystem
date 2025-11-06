@@ -16,8 +16,8 @@
   <style>
     .parking-space {
       position: absolute;
-      background-color: rgba(0, 123, 255, 0.4);
-      border: 2px solid blue;
+      background-color: rgba(168, 168, 168, 0.4);
+      border: 2px solid rgb(134, 134, 134);
       z-index: 10;
       cursor: pointer;
       transition: all 0.2s;
@@ -30,18 +30,18 @@
     }
 
     .parking-space.state-taken {
-      background-color: rgba(220, 53, 69, 0.6);
-      border: 2px solid red;
+      background-color: rgba(63, 63, 63, 0.6);
+      border: 2px solid rgb(48, 48, 48);
     }
 
     .parking-space.state-available {
-      background-color: rgba(40, 167, 69, 0.6);
-      border: 2px solid green;
+      background-color: rgba(202, 202, 202, 0.6);
+      border: 2px solid rgb(252, 252, 252);
     }
 
     .parking-space.state-restricted {
-      background-color: rgba(108, 117, 125, 0.6);
-      border: 2px solid gray;
+      background-color: rgba(53, 53, 53, 0.6);
+      border: 2px solid rgb(24, 24, 24);
     }
 
     .parking-space.user-occupied {
@@ -345,6 +345,7 @@
         $('#floor-display').text(`Floor: ${floor}`);
         $container.find('.parking-space').remove();
 
+        // In the loadFloor function, update the parkingSpaces.forEach loop:
         parkingSpaces.forEach(space => {
           const isUserSpace = (userSlotIndex && space.index == userSlotIndex) ||
             (userLicensePlate && space.plate === userLicensePlate);
@@ -360,9 +361,13 @@
             top: `${space.locationY}%`,
             left: `${space.locationX}%`,
             width: `${space.sizeX}%`,
-            height: `${space.sizeY}%`
+            height: `${space.sizeY}%`,
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center'
           });
 
+          // Add icons based on state and exclusive status
           if (space.state.toLowerCase() === 'taken') {
             const carImg = $('<img>', {
               'class': 'parking-space-image',
@@ -370,6 +375,12 @@
               'alt': 'Car'
             });
             spaceDiv.append(carImg);
+          } else if (space.state.toLowerCase() === 'available') {
+            if (space.feature?.toLowerCase() === 'disabled') {
+              spaceDiv.append('<i class="fa-brands fa-accessible-icon" style="font-size: 1.5em; color: #000;"></i>');
+            } else {
+              spaceDiv.append('<i class="fa-solid fa-triangle-exclamation" style="font-size: 1.5em; color: #000;"></i>');
+            }
           }
 
           $container.append(spaceDiv);
