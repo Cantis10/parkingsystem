@@ -421,10 +421,10 @@
           } else if (space.state.toLowerCase() === 'available') {
             if (space.feature?.toLowerCase() === 'disabled') {
               spaceDiv.append('<i class="fa-brands fa-accessible-icon" style="font-size: 1.5em; color: #000;"></i>');
-            } else {
+            } 
+          }else if (space.state.toLowerCase() === 'restricted') {
               spaceDiv.append('<i class="fa-solid fa-triangle-exclamation" style="font-size: 1.5em; color: #000;"></i>');
             }
-          }
 
           $container.append(spaceDiv);
         });
