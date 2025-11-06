@@ -44,6 +44,8 @@ try {
 
 
 
+
+
 app.get('/api/auth/verify/:token', async (req, res) => {
   try {
     const { token } = req.params;
