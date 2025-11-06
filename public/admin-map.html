@@ -763,59 +763,67 @@
       });
 
       // Admin save handler
-      $('#admin-save').off('click').on('click', function (e) {
-        e.preventDefault();
+      $('#admin-save').off('click').on('click', function(e) {
+  e.preventDefault();
+  console.log('Save button clicked');
 
-        let restrictionJson = null;
-        const mode = $('#restriction-mode').val();
+  let restrictionJson = null;
+  const mode = $('#restriction-mode').val();
 
-        if (mode === 'builder') {
-          restrictionJson = buildRestrictionJsonFromBuilder();
-        } else if (mode === 'json') {
-          const jsonText = $('#edit-restriction-json').val().trim();
-          if (jsonText) {
-            try {
-              JSON.parse(jsonText); // Validate
-              restrictionJson = jsonText;
-            } catch (e) {
-              alert('Invalid JSON format in restrictions. Please fix or validate first.');
-              return;
-            }
-          }
-        }
+  if (mode === 'builder') {
+    restrictionJson = buildRestrictionJsonFromBuilder();
+    console.log('Built restriction JSON:', restrictionJson);
+  } else if (mode === 'json') {
+    const jsonText = $('#edit-restriction-json').val().trim();
+    if (jsonText) {
+      try {
+        JSON.parse(jsonText); // Validate
+        restrictionJson = jsonText;
+      } catch (e) {
+        alert('Invalid JSON format in restrictions. Please fix or validate first.');
+        return;
+      }
+    }
+  }
+  // mode === 'none' will leave restrictionJson as null, effectively removing restrictions
 
-        const updatedSpace = {
-          index: $('#edit-index').val(),
-          location_x: parseFloat($('#edit-location-x').val()),
-          location_y: parseFloat($('#edit-location-y').val()),
-          width: parseFloat($('#edit-width').val()),
-          height: parseFloat($('#edit-height').val()),
-          floor: parseInt($('#edit-floor').val(), 10),
-          price: parseFloat($('#edit-price').val()),
-          state: $('#edit-state').val(),
-          exclusive: $('#edit-exclusive').val(),
-          plate: $('#edit-plate').val() || null,
-          days_to_occupy: parseInt($('#edit-days').val(), 10) || 0,
-          restriction_json: restrictionJson
-        };
+  const updatedSpace = {
+    index: $('#edit-index').val(),
+    location_x: parseFloat($('#edit-location-x').val()),
+    location_y: parseFloat($('#edit-location-y').val()),
+    width: parseFloat($('#edit-width').val()),
+    height: parseFloat($('#edit-height').val()),
+    floor: parseInt($('#edit-floor').val(), 10),
+    price: parseFloat($('#edit-price').val()),
+    state: $('#edit-state').val(),
+    exclusive: $('#edit-exclusive').val(),
+    plate: $('#edit-plate').val() || null,
+    days_to_occupy: parseInt($('#edit-days').val(), 10) || 0,
+    restriction_json: restrictionJson
+  };
 
-        $.ajax({
-          url: '/api/admin/parking/update',
-          method: 'POST',
-          contentType: 'application/json',
-          data: JSON.stringify(updatedSpace),
-          success: function () {
-            fetchParkingSpaces(function () {
-              loadFloor(currentFloorIndex, activeContainerSelector);
-              $('#adminEditModal').modal('hide');
-              alert('Parking space updated successfully!');
-            });
-          },
-          error: function (xhr) {
-            alert('Failed to update parking space: ' + (xhr.responseJSON?.error || 'Unknown error'));
-          }
-        });
+  console.log('Sending update request:', updatedSpace);
+
+  $.ajax({
+    url: '/api/admin/parking/update',
+    method: 'POST',
+    contentType: 'application/json',
+    data: JSON.stringify(updatedSpace),
+    success: function(response) {
+      console.log('Update successful:', response);
+      fetchParkingSpaces(function() {
+        loadFloor(currentFloorIndex, activeContainerSelector);
+        $('#adminEditModal').modal('hide');
+        alert('Parking space updated successfully!');
       });
+    },
+    error: function(xhr, status, error) {
+      console.error('Update failed:', {xhr, status, error});
+      const errorMsg = xhr.responseJSON?.error || xhr.responseJSON?.details || error || 'Unknown error';
+      alert('Failed to update parking space: ' + errorMsg);
+    }
+  });
+});
 
       $('#search-user-btn').on('click', function () {
         const username = $('#username-search').val().trim();

@@ -1462,7 +1462,101 @@ app.post('/api/parking/reserve', async (req, res) => {
 });
 
 // UPDATE: Modify the admin parking update endpoint to handle restriction_json
+app.post('/api/admin/parking/update', async (req, res) => {
+  const user = getUserFromToken(req);
+  if (!user || user.role !== 'admin') {
+    console.log('Access denied: Not admin');
+    return res.status(403).json({ error: 'Admin privileges required' });
+  }
 
+  try {
+    console.log('Received update request:', req.body);
+
+    const {
+      index,
+      location_x,
+      location_y,
+      width,
+      height,
+      floor,
+      price,
+      state,
+      exclusive,
+      plate,
+      days_to_occupy,
+      restriction_json
+    } = req.body;
+
+    // Get current space data
+    const currentSpace = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    if (currentSpace.rows.length === 0) {
+      console.log('Space not found:', index);
+      return res.status(404).json({ error: 'Parking space not found' });
+    }
+
+    // Build update query
+    const updates = [
+      'location_x = ?',
+      'location_y = ?',
+      'width = ?',
+      'height = ?',
+      'floor = ?',
+      'price = ?',
+      'state = ?',
+      'exclusive = ?',
+      'plate = ?',
+      'days_to_occupy = ?',
+      'restriction_json = ?'
+    ];
+
+    const args = [
+      location_x,
+      location_y,
+      width,
+      height,
+      floor,
+      price,
+      state,
+      exclusive,
+      plate || null,
+      days_to_occupy || 0,
+      restriction_json || null, // Allow null for removing restrictions
+      index
+    ];
+
+    console.log('Executing update with args:', args);
+
+    await db.execute({
+      sql: `UPDATE parking_spaces SET ${updates.join(', ')} WHERE "index" = ?`,
+      args: args
+    });
+
+    // Get updated space data
+    const updatedSpace = await db.execute({
+      sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
+      args: [index]
+    });
+
+    console.log('Space updated successfully:', updatedSpace.rows[0]);
+
+    res.json({
+      success: true,
+      message: 'Parking space updated successfully',
+      space: updatedSpace.rows[0]
+    });
+
+  } catch (err) {
+    console.error('Error updating parking space:', err);
+    res.status(500).json({ 
+      error: 'Failed to update parking space', 
+      details: err.message || 'Unknown database error'
+    });
+  }
+});
 
 // ADD: New endpoint to validate restriction JSON format
 app.post('/api/admin/parking/validate-restrictions', async (req, res) => {
