@@ -425,7 +425,6 @@
         calendar.render();
       }
 
-      // Open calendar modal when clicking a parking space
       $('#map-wrapper').on('click', '.parking-space', function () {
         const idx = $(this).data('index');
         const space = parkingSpaces.find(s => s.index == idx);
@@ -456,16 +455,15 @@
           $('#calendar-cancel-btn').show();
           $('.row.mb-3').hide(); // Hide date selection
           $('#price-calculation').hide();
-          $('#calendar').hide();
+          $('#calendar').show(); // Changed: Show calendar for user's space
+          loadCalendarData(space.index); // Load calendar data for user's space
         } else {
           $('#calendar-reserve-btn').show();
           $('#calendar-cancel-btn').hide();
           $('.row.mb-3').show();
           $('#calendar').show();
-        }
 
-        // Reset form if not user's space
-        if (!isUserSpace) {
+          // Reset form if not user's space
           const today = new Date().toISOString().split('T')[0];
           $('#calendar-start-date').val(today);
           $('#calendar-end-date').val(today);
@@ -552,15 +550,18 @@
               const processedEvent = {
                 ...event,
                 start: event.start,
-                // Add 1 day to end date since FullCalendar uses exclusive end dates
-                end: new Date(new Date(event.end).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+                end: new Date(new Date(event.end).getTime() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                color: event.extendedProps?.username === user.username ? '#ffd700' : // Gold for user's reservations
+                  event.type === 'restriction' ? '#dc3545' : // Red for restrictions
+                    '#ffc107' // Yellow for other occupancies
               };
 
               console.log('Processed event:', {
                 title: processedEvent.title,
                 start: processedEvent.start,
                 end: processedEvent.end,
-                type: processedEvent.type
+                type: processedEvent.type,
+                color: processedEvent.color
               });
 
               return processedEvent;
