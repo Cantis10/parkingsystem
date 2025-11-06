@@ -1461,7 +1461,7 @@ app.post('/api/parking/reserve', async (req, res) => {
   }
 });
 
-// UPDATE: Modify the admin parking update endpoint to handle restriction_json
+// In index.js, update the admin parking update endpoint
 app.post('/api/admin/parking/update', async (req, res) => {
   const user = getUserFromToken(req);
   if (!user || user.role !== 'admin') {
@@ -1470,8 +1470,6 @@ app.post('/api/admin/parking/update', async (req, res) => {
   }
 
   try {
-    console.log('Received update request:', req.body);
-
     const {
       index,
       location_x,
@@ -1487,52 +1485,66 @@ app.post('/api/admin/parking/update', async (req, res) => {
       restriction_json
     } = req.body;
 
-    // Get current space data
-    const currentSpace = await db.execute({
+    console.log('Received update data:', req.body);
+
+    // Get existing space data first
+    const existingSpace = await db.execute({
       sql: 'SELECT * FROM parking_spaces WHERE "index" = ?',
       args: [index]
     });
 
-    if (currentSpace.rows.length === 0) {
-      console.log('Space not found:', index);
+    if (existingSpace.rows.length === 0) {
       return res.status(404).json({ error: 'Parking space not found' });
     }
 
-    // Build update query
-    const updates = [
-      'location_x = ?',
-      'location_y = ?',
-      'width = ?',
-      'height = ?',
-      'floor = ?',
-      'price = ?',
-      'state = ?',
-      'exclusive = ?',
-      'plate = ?',
-      'days_to_occupy = ?',
-      'restriction_json = ?'
-    ];
+    // Validate and process updates
+    const updates = {
+      location_x: location_x !== undefined ? parseFloat(location_x) : existingSpace.rows[0].location_x,
+      location_y: location_y !== undefined ? parseFloat(location_y) : existingSpace.rows[0].location_y,
+      width: width !== undefined ? parseFloat(width) : existingSpace.rows[0].width,
+      height: height !== undefined ? parseFloat(height) : existingSpace.rows[0].height,
+      floor: floor !== undefined ? parseInt(floor, 10) : existingSpace.rows[0].floor,
+      price: price !== undefined ? parseFloat(price) : existingSpace.rows[0].price,
+      state: state || existingSpace.rows[0].state,
+      exclusive: exclusive || existingSpace.rows[0].exclusive,
+      plate: plate !== undefined ? plate : existingSpace.rows[0].plate,
+      days_to_occupy: days_to_occupy !== undefined ? parseInt(days_to_occupy, 10) : existingSpace.rows[0].days_to_occupy,
+      restriction_json: restriction_json !== undefined ? restriction_json : existingSpace.rows[0].restriction_json,
+      last_update: new Date().toISOString()
+    };
 
-    const args = [
-      location_x,
-      location_y,
-      width,
-      height,
-      floor,
-      price,
-      state,
-      exclusive,
-      plate || null,
-      days_to_occupy || 0,
-      restriction_json || null, // Allow null for removing restrictions
-      index
-    ];
+    console.log('Processed updates:', updates);
 
-    console.log('Executing update with args:', args);
-
-    await db.execute({
-      sql: `UPDATE parking_spaces SET ${updates.join(', ')} WHERE "index" = ?`,
-      args: args
+    const result = await db.execute({
+      sql: `UPDATE parking_spaces 
+            SET location_x = ?, 
+                location_y = ?, 
+                width = ?, 
+                height = ?, 
+                floor = ?, 
+                price = ?, 
+                state = ?, 
+                exclusive = ?,
+                plate = ?, 
+                days_to_occupy = ?, 
+                restriction_json = ?,
+                last_update = ?
+            WHERE "index" = ?`,
+      args: [
+        updates.location_x,
+        updates.location_y,
+        updates.width,
+        updates.height,
+        updates.floor,
+        updates.price,
+        updates.state,
+        updates.exclusive,
+        updates.plate,
+        updates.days_to_occupy,
+        updates.restriction_json,
+        updates.last_update,
+        index
+      ]
     });
 
     // Get updated space data
@@ -1553,11 +1565,10 @@ app.post('/api/admin/parking/update', async (req, res) => {
     console.error('Error updating parking space:', err);
     res.status(500).json({ 
       error: 'Failed to update parking space', 
-      details: err.message || 'Unknown database error'
+      details: err.message 
     });
   }
 });
-
 // ADD: New endpoint to validate restriction JSON format
 app.post('/api/admin/parking/validate-restrictions', async (req, res) => {
   const user = getUserFromToken(req);
