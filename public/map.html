@@ -140,6 +140,50 @@
       padding: 0.75rem;
       margin-top: 0.5rem;
     }
+
+    /* Calendar fixes */
+  .fc {
+    height: auto !important;
+    min-height: 600px;
+  }
+
+  .fc .fc-view-harness {
+    height: auto !important;
+    min-height: 500px;
+  }
+
+  .fc .fc-daygrid-body {
+    width: 100% !important;
+  }
+
+  .fc .fc-scrollgrid {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  .fc .fc-daygrid-day {
+    min-height: 80px !important;
+  }
+
+  .fc .fc-col-header-cell {
+    padding: 8px 4px !important;
+  }
+
+  .fc .fc-daygrid-day-number {
+    padding: 4px 8px !important;
+    font-size: 0.9em;
+  }
+
+  /* Make calendar responsive */
+  @media (max-width: 768px) {
+    .fc {
+      min-height: 400px;
+    }
+    
+    .fc .fc-daygrid-day {
+      min-height: 60px !important;
+    }
+  }
   </style>
 </head>
 
