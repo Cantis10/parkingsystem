@@ -247,169 +247,6 @@
         });
       }
 
-      function removeRestrictionElement(type, key) {
-        console.log('Removing restriction:', { type, key });
-
-        // Get current JSON
-        const jsonText = $('#edit-restriction-json').val();
-        if (!jsonText) return;
-
-        try {
-          const restrictions = JSON.parse(jsonText);
-
-          // Remove based on type
-          switch (type) {
-            case 'daily':
-              if (restrictions.daily) {
-                delete restrictions.daily;
-              }
-              break;
-            case 'weekly':
-              if (restrictions.weekly && restrictions.weekly[key]) {
-                delete restrictions.weekly[key];
-                if (Object.keys(restrictions.weekly).length === 0) {
-                  delete restrictions.weekly;
-                }
-              }
-              break;
-            case 'yearly':
-              if (restrictions.yearly && restrictions.yearly[key]) {
-                delete restrictions.yearly[key];
-                if (Object.keys(restrictions.yearly).length === 0) {
-                  delete restrictions.yearly;
-                }
-              }
-              break;
-            case 'special':
-              if (restrictions.special?.daily && restrictions.special.daily[key]) {
-                delete restrictions.special.daily[key];
-                if (Object.keys(restrictions.special.daily).length === 0) {
-                  delete restrictions.special;
-                }
-              }
-              break;
-          }
-
-          // Update JSON field
-          const newJson = Object.keys(restrictions).length > 0 ?
-            JSON.stringify(restrictions, null, 2) : '';
-          $('#edit-restriction-json').val(newJson);
-
-          // Refresh the builders
-          refreshRestrictionBuilders(restrictions);
-
-          console.log('Restriction removed, new JSON:', newJson);
-
-        } catch (e) {
-          console.error('Error removing restriction:', e);
-        }
-      }
-
-      function refreshRestrictionBuilders(restrictions) {
-  // Clear all lists
-  $('#daily-list, #weekly-list, #yearly-list, #special-list').empty();
-
-  if (!restrictions) return;
-
-  // Rebuild daily
-  if (restrictions.daily) {
-    restrictions.daily.forEach(range => {
-      const [start, end] = range.split('-');
-      const id = 'daily-' + Date.now() + Math.random();
-      $('#daily-list').append(`
-        <div class="restriction-item" id="${id}">
-          <div class="d-flex align-items-center gap-2">
-            <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:100px;">
-            <span>to</span>
-            <input type="time" class="form-control form-control-sm" data-type="end" value="${end}" style="width:100px;">
-            <button class="btn btn-sm btn-danger" type="button" onclick="removeRestrictionElement('daily')">×</button>
-          </div>
-        </div>
-      `);
-    });
-  }
-
-  // Rebuild weekly
-  if (restrictions.weekly) {
-    Object.entries(restrictions.weekly).forEach(([day, ranges]) => {
-      const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
-      rangeArray.forEach(range => {
-        const [start, end] = range.split('-');
-        const id = 'weekly-' + Date.now() + Math.random();
-        $('#weekly-list').append(`
-          <div class="restriction-item" id="${id}">
-            <div class="d-flex align-items-center gap-2">
-              <select class="form-select form-select-sm" data-type="day" style="width:120px;">
-                <option value="0" ${day === '0' ? 'selected' : ''}>Sunday</option>
-                <option value="1" ${day === '1' ? 'selected' : ''}>Monday</option>
-                <option value="2" ${day === '2' ? 'selected' : ''}>Tuesday</option>
-                <option value="3" ${day === '3' ? 'selected' : ''}>Wednesday</option>
-                <option value="4" ${day === '4' ? 'selected' : ''}>Thursday</option>
-                <option value="5" ${day === '5' ? 'selected' : ''}>Friday</option>
-                <option value="6" ${day === '6' ? 'selected' : ''}>Saturday</option>
-              </select>
-              <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:90px;">
-              <span>to</span>
-              <input type="time" class="form-control form-control-sm" data-type="end" value="${end}" style="width:90px;">
-              <button class="btn btn-sm btn-danger" type="button" onclick="removeRestrictionElement('weekly', '${day}')">×</button>
-            </div>
-          </div>
-        `);
-      });
-    });
-  }
-
-  // Rebuild yearly
-  if (restrictions.yearly) {
-    Object.entries(restrictions.yearly).forEach(([monthDay, ranges]) => {
-      const [month, day] = monthDay.split('-');
-      const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
-      rangeArray.forEach(range => {
-        const [start, end] = range.split('-');
-        const id = 'yearly-' + Date.now() + Math.random();
-        $('#yearly-list').append(`
-          <div class="restriction-item" id="${id}">
-            <div class="d-flex align-items-center gap-2">
-              <input type="number" class="form-control form-control-sm" data-type="month" value="${month}" min="1" max="12" style="width:80px;">
-              <input type="number" class="form-control form-control-sm" data-type="day" value="${day}" min="1" max="31" style="width:70px;">
-              <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:90px;">
-              <span>to</span>
-              <input type="time" class="form-control form-control-sm" data-type="end" value="${end}" style="width:90px;">
-              <button class="btn btn-sm btn-danger" type="button" onclick="removeRestrictionElement('yearly', '${monthDay}')">×</button>
-            </div>
-          </div>
-        `);
-      });
-    });
-  }
-
-  // Rebuild special
-  if (restrictions.special?.daily) {
-    Object.entries(restrictions.special.daily).forEach(([date, ranges]) => {
-      const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
-      rangeArray.forEach(range => {
-        const [start, end] = range.split('-');
-        const id = 'special-' + Date.now() + Math.random();
-        $('#special-list').append(`
-          <div class="restriction-item" id="${id}">
-            <div class="d-flex align-items-center gap-2">
-              <input type="date" class="form-control form-control-sm" data-type="date" value="${date}" style="width:150px;">
-              <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:90px;">
-              <span>to</span>
-              <input type="time" class="form-control form-control-sm" data-type="end" value="${end}" style="width:90px;">
-              <button class="btn btn-sm btn-danger" type="button" onclick="removeRestrictionElement('special', '${date}')">×</button>
-            </div>
-          </div>
-        `);
-      });
-    });
-  }
-
-  updateJsonPreview();
-}
-
-
-
       function fetchParkingSpaces(callback) {
         $.ajax({
           url: `/api/parking/${locationId}`,
@@ -519,64 +356,6 @@
 
           $list.append($li);
         });
-      }
-
-      function removeRestrictionElement(type, key) {
-        console.log('Removing restriction:', { type, key });
-
-        // Get current JSON
-        const jsonText = $('#edit-restriction-json').val();
-        if (!jsonText) return;
-
-        try {
-          const restrictions = JSON.parse(jsonText);
-
-          // Remove based on type
-          switch (type) {
-            case 'daily':
-              if (restrictions.daily) {
-                delete restrictions.daily;
-              }
-              break;
-            case 'weekly':
-              if (restrictions.weekly && restrictions.weekly[key]) {
-                delete restrictions.weekly[key];
-                if (Object.keys(restrictions.weekly).length === 0) {
-                  delete restrictions.weekly;
-                }
-              }
-              break;
-            case 'yearly':
-              if (restrictions.yearly && restrictions.yearly[key]) {
-                delete restrictions.yearly[key];
-                if (Object.keys(restrictions.yearly).length === 0) {
-                  delete restrictions.yearly;
-                }
-              }
-              break;
-            case 'special':
-              if (restrictions.special?.daily && restrictions.special.daily[key]) {
-                delete restrictions.special.daily[key];
-                if (Object.keys(restrictions.special.daily).length === 0) {
-                  delete restrictions.special;
-                }
-              }
-              break;
-          }
-
-          // Update JSON field
-          const newJson = Object.keys(restrictions).length > 0 ?
-            JSON.stringify(restrictions, null, 2) : '';
-          $('#edit-restriction-json').val(newJson);
-
-          // Refresh the builders
-          refreshRestrictionBuilders(restrictions);
-
-          console.log('Restriction removed, new JSON:', newJson);
-
-        } catch (e) {
-          console.error('Error removing restriction:', e);
-        }
       }
 
       function highlightOverdueOnMap(items) {
@@ -708,17 +487,8 @@
       };
 
       window.removeRestriction = function (id) {
-        console.log('Removing restriction element:', id);
-
-        // Remove the visual element
-        const $element = $('#' + id);
-        if ($element.length) {
-          $element.fadeOut(200, function () {
-            $(this).remove();
-            // Update JSON preview after removing element
-            updateJsonPreview();
-          });
-        }
+        $('#' + id).remove();
+        updateJsonPreview();
       };
 
       window.validateRestrictionJson = function () {
@@ -819,21 +589,21 @@
       }
 
       function populateAdminModal(space) {
-        $('#edit-index').val(space.index);
-        $('#edit-location-index').val(space.location_index);
-        $('#edit-location-x').val(space.location_x);
-        $('#edit-location-y').val(space.location_y);
-        $('#edit-width').val(space.width);
-        $('#edit-height').val(space.height);
-        $('#edit-floor').val(space.floor);
-        $('#edit-price').val(space.price);
-        $('#edit-days-occupy').val(space.days_to_occupy);
-        $('#edit-exclusive').val(space.exclusive);
-        $('#edit-state').val(space.state);
-        $('#edit-plate').val(space.plate || '');
-        $('#edit-is-occupied').prop('checked', space.is_occupied === 1);
-        $('#edit-occupancy-json').val(space.occupancy_json || '');
-        $('#edit-restriction-json').val(space.restriction_json || '');
+$('#edit-index').val(space.index);
+  $('#edit-location-index').val(space.location_index);
+  $('#edit-location-x').val(space.location_x);
+  $('#edit-location-y').val(space.location_y);
+  $('#edit-width').val(space.width);
+  $('#edit-height').val(space.height);
+  $('#edit-floor').val(space.floor);
+  $('#edit-price').val(space.price);
+  $('#edit-days-occupy').val(space.days_to_occupy);
+  $('#edit-exclusive').val(space.exclusive);
+  $('#edit-state').val(space.state);
+  $('#edit-plate').val(space.plate || '');
+  $('#edit-is-occupied').prop('checked', space.is_occupied === 1);
+  $('#edit-occupancy-json').val(space.occupancy_json || '');
+  $('#edit-restriction-json').val(space.restriction_json || '');
 
         // Clear restriction builders
         $('#daily-list').empty();
@@ -995,14 +765,12 @@
       // Admin save handler
       $('#admin-save').off('click').on('click', function (e) {
         e.preventDefault();
-        console.log('Save button clicked');
 
         let restrictionJson = null;
         const mode = $('#restriction-mode').val();
 
         if (mode === 'builder') {
           restrictionJson = buildRestrictionJsonFromBuilder();
-          console.log('Built restriction JSON:', restrictionJson);
         } else if (mode === 'json') {
           const jsonText = $('#edit-restriction-json').val().trim();
           if (jsonText) {
@@ -1015,7 +783,6 @@
             }
           }
         }
-        // mode === 'none' will leave restrictionJson as null, effectively removing restrictions
 
         const updatedSpace = {
           index: $('#edit-index').val(),
@@ -1032,25 +799,20 @@
           restriction_json: restrictionJson
         };
 
-        console.log('Sending update request:', updatedSpace);
-
         $.ajax({
           url: '/api/admin/parking/update',
           method: 'POST',
           contentType: 'application/json',
           data: JSON.stringify(updatedSpace),
-          success: function (response) {
-            console.log('Update successful:', response);
+          success: function () {
             fetchParkingSpaces(function () {
               loadFloor(currentFloorIndex, activeContainerSelector);
               $('#adminEditModal').modal('hide');
               alert('Parking space updated successfully!');
             });
           },
-          error: function (xhr, status, error) {
-            console.error('Update failed:', { xhr, status, error });
-            const errorMsg = xhr.responseJSON?.error || xhr.responseJSON?.details || error || 'Unknown error';
-            alert('Failed to update parking space: ' + errorMsg);
+          error: function (xhr) {
+            alert('Failed to update parking space: ' + (xhr.responseJSON?.error || 'Unknown error'));
           }
         });
       });
