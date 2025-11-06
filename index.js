@@ -1569,6 +1569,8 @@ app.post('/api/admin/parking/update', async (req, res) => {
     });
   }
 });
+
+
 // ADD: New endpoint to validate restriction JSON format
 app.post('/api/admin/parking/validate-restrictions', async (req, res) => {
   const user = getUserFromToken(req);
