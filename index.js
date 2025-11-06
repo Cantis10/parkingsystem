@@ -1342,7 +1342,7 @@ app.get('/api/parking/:location_id', async (req, res) => {
         locationY: parseInt(row.location_y, 10) || 0,
         sizeX: parseInt(row.width, 10) || 0,
         sizeY: parseInt(row.height, 10) || 0,
-        plate: row.plate,
+        plate: row.occupancyJson,
         daysToOccupy: row.days_to_occupy,
         lastUpdate: row.last_update,
         restrictionJson: row.restriction_json,
@@ -1525,7 +1525,7 @@ app.post('/api/admin/parking/update', async (req, res) => {
                 price = ?, 
                 state = ?, 
                 exclusive = ?,
-                plate = ?, 
+                occupancy_json = ?, 
                 days_to_occupy = ?, 
                 restriction_json = ?,
                 last_update = ?

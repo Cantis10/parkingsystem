@@ -363,59 +363,69 @@
         });
       }
 
-      function loadFloor(index, containerSelector) {
-        if (mapData.floors.length === 0) return;
+function loadFloor(index, containerSelector) {
+  if (!mapData || mapData.floors.length === 0) return;
 
-        const floor = mapData.floors[index];
-        const $container = $(containerSelector);
+  const floor = mapData.floors[index];
+  const $container = $(containerSelector);
 
-        $container.find('.map-image').attr('src', mapData.maps[index]);
-        $('#floor-display').text(`Floor: ${floor}`);
-        $container.find('.parking-space').remove();
+  // Clear all old parking spaces BEFORE loading a new floor
+  $container.find('.parking-space').remove();
 
-        parkingSpaces.forEach(space => {
-          const isUserSpace = (userSlotIndex && space.index == userSlotIndex) ||
-            (userLicensePlate && space.plate === userLicensePlate);
+  // Update map image & floor display
+  $container.find('.map-image').attr('src', mapData.maps[index]);
+  $('#floor-display').text(`Floor: ${floor}`);
 
-          const isHorizontal = space.sizeX > space.sizeY;
-          const carImage = isHorizontal ? '/images/map/carHorizontal.png' : '/images/map/carVertical.png';
+  // Filter spaces that belong to this floor only
+  const floorSpaces = parkingSpaces.filter(space => space.floor === floor);
 
-          const spaceDiv = $('<div>', {
-            'class': `parking-space state-${space.state} ${isUserSpace ? 'user-occupied' : ''} ${space.exclusive === 'disabled' ? 'disabled-space' : ''}`,
-            'data-index': space.index,
-            'title': `Space #${space.index} | Floor: ${space.floor} | State: ${space.state} | Type: ${space.feature} | Price: PHP ${parseFloat(space.price).toFixed(2)}${isUserSpace ? ' | YOUR SPACE' : ''}`
-          }).css({
-            top: `${space.locationY}%`,
-            left: `${space.locationX}%`,
-            width: `${space.sizeX}%`,
-            height: `${space.sizeY}%`,
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center'
-          });
+  floorSpaces.forEach(space => {
+    const isUserSpace =
+      (userSlotIndex && space.index == userSlotIndex) ||
+      (userLicensePlate && space.plate === userLicensePlate);
 
-          if (space.state.toLowerCase() === 'taken') {
-            const carImg = $('<img>', {
-              'class': 'parking-space-image',
-              'src': carImage,
-              'alt': 'Car'
-            });
-            spaceDiv.append(carImg);
-          } else if (space.exclusive === 'disabled') {
-            spaceDiv.append('<i class="fas fa-wheelchair" style="font-size: 1.5em; color: #17a2b8;"></i>');
-          } else if (space.state.toLowerCase() === 'available') {
-            spaceDiv.append('<i class="fas fa-parking" style="font-size: 1.5em; color: #28a745;"></i>');
-          }
+    const isHorizontal = space.sizeX > space.sizeY;
+    const carImage = isHorizontal
+      ? '/images/map/carHorizontal.png'
+      : '/images/map/carVertical.png';
 
-          $container.append(spaceDiv);
-        });
+    const spaceDiv = $('<div>', {
+      'class': `parking-space state-${space.state} ${isUserSpace ? 'user-occupied' : ''} ${space.exclusive === 'disabled' ? 'disabled-space' : ''}`,
+      'data-index': space.index,
+      'title': `Space #${space.index} | Floor: ${space.floor} | State: ${space.state} | Type: ${space.feature} | Price: PHP ${parseFloat(space.price).toFixed(2)}${isUserSpace ? ' | YOUR SPACE' : ''}`
+    }).css({
+      top: `${space.locationY}%`,
+      left: `${space.locationX}%`,
+      width: `${space.sizeX}%`,
+      height: `${space.sizeY}%`,
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center'
+    });
 
-        $container.find('.parking-space').tooltip({
-          content: function () { return $(this).prop('title'); }
-        });
+    if (space.state.toLowerCase() === 'taken') {
+      spaceDiv.append($('<img>', {
+        'class': 'parking-space-image',
+        'src': carImage,
+        'alt': 'Car'
+      }));
+    } else if (space.exclusive === 'disabled') {
+      spaceDiv.append('<i class="fas fa-wheelchair" style="font-size: 1.5em; color: #17a2b8;"></i>');
+    } else if (space.state.toLowerCase() === 'available') {
+      spaceDiv.append('<i class="fas fa-parking" style="font-size: 1.5em; color: #28a745;"></i>');
+    }
 
-        updateButtonStates();
-      }
+    $container.append(spaceDiv);
+  });
+
+  // Re-init tooltips
+  $container.find('.parking-space').tooltip({
+    content: function () { return $(this).prop('title'); }
+  });
+
+  updateButtonStates();
+}
+
 
 
       function updateButtonStates() {
