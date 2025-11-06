@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -19,31 +20,62 @@
       cursor: pointer;
       transition: all 0.2s;
     }
+
+    .user-search-panel {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 300px;
+      z-index: 1000;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .admin-input {
+      width: 100%;
+      padding: 6px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    .admin-input:disabled {
+      background-color: #e9ecef;
+    }
+
     .parking-space:hover {
       border-color: #ffc107;
       box-shadow: 0 0 10px rgba(255, 193, 7, 0.8);
     }
+
     .parking-space.state-taken {
       background-color: rgba(220, 53, 69, 0.6);
       border: 2px solid red;
     }
+
     .parking-space.state-available {
       background-color: rgba(40, 167, 69, 0.6);
       border: 2px solid green;
     }
+
     .parking-space.state-restricted {
       background-color: rgba(128, 128, 128, 0.6);
       border: 2px solid #666;
     }
+
     .map-container {
       position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
     }
+
     .map-image {
-      width: 100%; height: 100%;
+      width: 100%;
+      height: 100%;
       display: block;
     }
+
     .admin-badge {
       position: fixed;
       top: 80px;
@@ -55,6 +87,7 @@
       font-weight: bold;
       z-index: 1000;
     }
+
     .overdue-panel {
       position: fixed;
       right: 20px;
@@ -64,27 +97,32 @@
       overflow-y: auto;
       background: #fff;
       border: 1px solid #ddd;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
       border-radius: 8px;
       z-index: 1100;
       padding: 10px;
     }
+
     .overdue-panel h6 {
       margin: 0 0 8px 0;
       font-weight: 700;
     }
+
     .overdue-item {
       cursor: pointer;
     }
+
     .overdue-item .meta {
       font-size: 0.85rem;
       color: #555;
     }
+
     .overdue-empty {
       color: #666;
       text-align: center;
       padding: 12px 6px;
     }
+
     .restriction-item {
       background: #f8f9fa;
       border: 1px solid #dee2e6;
@@ -92,6 +130,7 @@
       padding: 8px;
       margin-bottom: 8px;
     }
+
     .json-preview {
       background: #f8f9fa;
       border: 1px solid #dee2e6;
@@ -104,6 +143,7 @@
     }
   </style>
 </head>
+
 <body>
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top rounded-bottom-lg">
     <div class="container-fluid">
@@ -132,7 +172,8 @@
   <div class="mapContainer">
     <div class="map-main-container">
       <div id="map-wrapper" style="position:relative; padding-top:80px;">
-        <img class="map-sizer" src="https://placehold.co/1200x800/transparent/000?text=Parking%20Map%20Sizer" alt="Map Sizing Element">
+        <img class="map-sizer" src="https://placehold.co/1200x800/transparent/000?text=Parking%20Map%20Sizer"
+          alt="Map Sizing Element">
         <div id="map-container-1" class="map-container">
           <img class="map-image" src="images/map/placeHolder.png" alt="Parking Map">
         </div>
@@ -142,7 +183,7 @@
       </div>
     </div>
   </div>
-  
+
   <div class="floor-controls">
     <button id="floor-up" class="btn btn-primary shadow">▲</button>
     <div id="floor-display" class="shadow-sm">--</div>
@@ -154,151 +195,151 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
   <script>
-  $(document).ready(function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const locationId = urlParams.get('location_id');
+    $(document).ready(function () {
+      const urlParams = new URLSearchParams(window.location.search);
+      const locationId = urlParams.get('location_id');
 
-    if (!locationId) {
-      alert('No location selected. Redirecting to home.');
-      window.location.href = '/home';
-      return;
-    }
-
-    let mapData = { maps: [], floors: [] };
-    let parkingSpaces = [];
-    let currentFloorIndex = 0;
-    let activeContainerSelector = '#map-container-1';
-    let overduePollInterval = null;
-
-    // Restriction builder state
-    let dailyRestrictions = [];
-    let weeklyRestrictions = {};
-    let yearlyRestrictions = {};
-    let specialRestrictions = {};
-
-    // Verify admin access
-    $.ajax({
-      url: '/api/auth/user',
-      method: 'GET'
-    }).done(function(userData) {
-      if (userData.role !== 'admin' || parseInt(userData.location_index_admin) !== parseInt(locationId)) {
-        alert('Access denied. Admin privileges required for this location.');
+      if (!locationId) {
+        alert('No location selected. Redirecting to home.');
         window.location.href = '/home';
-      }
-    }).fail(function() {
-      alert('Authentication failed.');
-      window.location.href = '/login';
-    });
-
-    function fetchMaps(callback) {
-      $.ajax({
-        url: `/api/maps/${locationId}`,
-        method: 'GET',
-        success: function(data) {
-          mapData.maps = (data || []).map(m => `/images/map/${m.floorsImageIndex}`);
-          mapData.floors = (data || []).map(m => m.floor);
-          if (callback) callback();
-        },
-        error: function(xhr) {
-          console.error('Failed to fetch maps:', xhr);
-          alert('Failed to load maps for this location.');
-        }
-      });
-    }
-
-    function fetchParkingSpaces(callback) {
-      $.ajax({
-        url: `/api/parking/${locationId}`,
-        method: 'GET',
-        success: function(data) {
-          parkingSpaces = data || [];
-          if (callback) callback();
-        },
-        error: function(xhr) {
-          console.error('Failed to fetch parking spaces:', xhr);
-        }
-      });
-    }
-
-    function loadFloor(index, containerSelector) {
-      if (!mapData.floors || mapData.floors.length === 0) return;
-
-      const floor = mapData.floors[index];
-      const $container = $(containerSelector);
-
-      if (mapData.maps[index]) {
-        $container.find('.map-image').attr('src', mapData.maps[index]);
-      }
-      $('#floor-display').text(`Floor: ${floor}`);
-
-      $container.find('.parking-space').remove();
-
-      parkingSpaces
-        .filter(space => String(space.floor) === String(floor))
-        .forEach(space => {
-          const top = (String(space.locationY).includes('%')) ? space.locationY : `${space.locationY}%`;
-          const left = (String(space.locationX).includes('%')) ? space.locationX : `${space.locationX}%`;
-          const width = (String(space.sizeX).includes('%')) ? space.sizeX : `${space.sizeX}%`;
-          const height = (String(space.sizeY).includes('%')) ? space.sizeY : `${space.sizeY}%`;
-
-          const $space = $('<div>', {
-            class: `parking-space state-${space.state}`,
-            'data-index': space.index,
-            title: `#${space.index} · ${space.plate || 'N/A'} · ${space.state}`
-          }).css({
-            position: 'absolute',
-            top,
-            left,
-            width,
-            height
-          });
-
-          $container.append($space);
-        });
-
-      $container.find('.parking-space').tooltip({
-        content: function() { return $(this).prop('title'); }
-      });
-
-      updateButtonStates();
-    }
-
-    function updateButtonStates() {
-      $('#floor-up').prop('disabled', currentFloorIndex >= (mapData.floors.length - 1));
-      $('#floor-down').prop('disabled', currentFloorIndex <= 0);
-    }
-
-    function fetchOverdueFeed() {
-      $.ajax({
-        url: `/api/admin/overdue/${locationId}`,
-        method: 'GET',
-        success: function(data) {
-          renderOverdueList(data);
-          highlightOverdueOnMap(data);
-        },
-        error: function(xhr) {
-          console.error('Failed to fetch overdue feed:', xhr);
-          $('#overdue-list').html('<li class="list-group-item overdue-empty">Failed to load</li>');
-        }
-      });
-    }
-
-    function renderOverdueList(items) {
-      const $list = $('#overdue-list');
-      $list.empty();
-
-      if (!items || items.length === 0) {
-        $list.append('<li class="list-group-item overdue-empty">No overdue parkers</li>');
         return;
       }
 
-      const now = new Date();
-      items.forEach(item => {
-        const expiry = item.expiry ? new Date(item.expiry) : null;
-        const overdueDays = expiry ? Math.floor((now - expiry) / (1000 * 60 * 60 * 24)) : 0;
-        const overdueLabel = overdueDays > 0 ? `${overdueDays}d overdue` : 'Due today';
+      let mapData = { maps: [], floors: [] };
+      let parkingSpaces = [];
+      let currentFloorIndex = 0;
+      let activeContainerSelector = '#map-container-1';
+      let overduePollInterval = null;
 
-        const $li = $(`
+      // Restriction builder state
+      let dailyRestrictions = [];
+      let weeklyRestrictions = {};
+      let yearlyRestrictions = {};
+      let specialRestrictions = {};
+
+      // Verify admin access
+      $.ajax({
+        url: '/api/auth/user',
+        method: 'GET'
+      }).done(function (userData) {
+        if (userData.role !== 'admin' || parseInt(userData.location_index_admin) !== parseInt(locationId)) {
+          alert('Access denied. Admin privileges required for this location.');
+          window.location.href = '/home';
+        }
+      }).fail(function () {
+        alert('Authentication failed.');
+        window.location.href = '/login';
+      });
+
+      function fetchMaps(callback) {
+        $.ajax({
+          url: `/api/maps/${locationId}`,
+          method: 'GET',
+          success: function (data) {
+            mapData.maps = (data || []).map(m => `/images/map/${m.floorsImageIndex}`);
+            mapData.floors = (data || []).map(m => m.floor);
+            if (callback) callback();
+          },
+          error: function (xhr) {
+            console.error('Failed to fetch maps:', xhr);
+            alert('Failed to load maps for this location.');
+          }
+        });
+      }
+
+      function fetchParkingSpaces(callback) {
+        $.ajax({
+          url: `/api/parking/${locationId}`,
+          method: 'GET',
+          success: function (data) {
+            parkingSpaces = data || [];
+            if (callback) callback();
+          },
+          error: function (xhr) {
+            console.error('Failed to fetch parking spaces:', xhr);
+          }
+        });
+      }
+
+      function loadFloor(index, containerSelector) {
+        if (!mapData.floors || mapData.floors.length === 0) return;
+
+        const floor = mapData.floors[index];
+        const $container = $(containerSelector);
+
+        if (mapData.maps[index]) {
+          $container.find('.map-image').attr('src', mapData.maps[index]);
+        }
+        $('#floor-display').text(`Floor: ${floor}`);
+
+        $container.find('.parking-space').remove();
+
+        parkingSpaces
+          .filter(space => String(space.floor) === String(floor))
+          .forEach(space => {
+            const top = (String(space.locationY).includes('%')) ? space.locationY : `${space.locationY}%`;
+            const left = (String(space.locationX).includes('%')) ? space.locationX : `${space.locationX}%`;
+            const width = (String(space.sizeX).includes('%')) ? space.sizeX : `${space.sizeX}%`;
+            const height = (String(space.sizeY).includes('%')) ? space.sizeY : `${space.sizeY}%`;
+
+            const $space = $('<div>', {
+              class: `parking-space state-${space.state}`,
+              'data-index': space.index,
+              title: `#${space.index} · ${space.plate || 'N/A'} · ${space.state}`
+            }).css({
+              position: 'absolute',
+              top,
+              left,
+              width,
+              height
+            });
+
+            $container.append($space);
+          });
+
+        $container.find('.parking-space').tooltip({
+          content: function () { return $(this).prop('title'); }
+        });
+
+        updateButtonStates();
+      }
+
+      function updateButtonStates() {
+        $('#floor-up').prop('disabled', currentFloorIndex >= (mapData.floors.length - 1));
+        $('#floor-down').prop('disabled', currentFloorIndex <= 0);
+      }
+
+      function fetchOverdueFeed() {
+        $.ajax({
+          url: `/api/admin/overdue/${locationId}`,
+          method: 'GET',
+          success: function (data) {
+            renderOverdueList(data);
+            highlightOverdueOnMap(data);
+          },
+          error: function (xhr) {
+            console.error('Failed to fetch overdue feed:', xhr);
+            $('#overdue-list').html('<li class="list-group-item overdue-empty">Failed to load</li>');
+          }
+        });
+      }
+
+      function renderOverdueList(items) {
+        const $list = $('#overdue-list');
+        $list.empty();
+
+        if (!items || items.length === 0) {
+          $list.append('<li class="list-group-item overdue-empty">No overdue parkers</li>');
+          return;
+        }
+
+        const now = new Date();
+        items.forEach(item => {
+          const expiry = item.expiry ? new Date(item.expiry) : null;
+          const overdueDays = expiry ? Math.floor((now - expiry) / (1000 * 60 * 60 * 24)) : 0;
+          const overdueLabel = overdueDays > 0 ? `${overdueDays}d overdue` : 'Due today';
+
+          const $li = $(`
           <li class="list-group-item overdue-item" data-index="${item.index}">
             <div class="d-flex justify-content-between align-items-start">
               <div>
@@ -313,69 +354,69 @@
           </li>
         `);
 
-        $list.append($li);
-      });
-    }
-
-    function highlightOverdueOnMap(items) {
-      $('.parking-space').each(function() {
-        $(this).css({
-          'box-shadow': '',
-          'border-color': ''
+          $list.append($li);
         });
-      });
-
-      if (!items || items.length === 0) return;
-
-      items.forEach(item => {
-        const selector = `.parking-space[data-index="${item.index}"]`;
-        const $el = $(selector);
-        if ($el.length) {
-          $el.css({
-            'box-shadow': '0 0 12px 4px rgba(255,0,0,0.45)',
-            'border-color': '#ff0000'
-          });
-        }
-      });
-    }
-
-    $('#overdue-list').on('click', '.overdue-item', function() {
-      const idx = $(this).data('index');
-      const space = parkingSpaces.find(s => String(s.index) === String(idx));
-      if (space) {
-        populateAdminModal(space);
-        $('#adminEditModal').modal('show');
-        return;
       }
 
-      fetchParkingSpaces(function() {
-        const space2 = parkingSpaces.find(s => String(s.index) === String(idx));
-        if (space2) {
-          populateAdminModal(space2);
+      function highlightOverdueOnMap(items) {
+        $('.parking-space').each(function () {
+          $(this).css({
+            'box-shadow': '',
+            'border-color': ''
+          });
+        });
+
+        if (!items || items.length === 0) return;
+
+        items.forEach(item => {
+          const selector = `.parking-space[data-index="${item.index}"]`;
+          const $el = $(selector);
+          if ($el.length) {
+            $el.css({
+              'box-shadow': '0 0 12px 4px rgba(255,0,0,0.45)',
+              'border-color': '#ff0000'
+            });
+          }
+        });
+      }
+
+      $('#overdue-list').on('click', '.overdue-item', function () {
+        const idx = $(this).data('index');
+        const space = parkingSpaces.find(s => String(s.index) === String(idx));
+        if (space) {
+          populateAdminModal(space);
           $('#adminEditModal').modal('show');
           return;
         }
-        alert('Space not found');
+
+        fetchParkingSpaces(function () {
+          const space2 = parkingSpaces.find(s => String(s.index) === String(idx));
+          if (space2) {
+            populateAdminModal(space2);
+            $('#adminEditModal').modal('show');
+            return;
+          }
+          alert('Space not found');
+        });
       });
-    });
 
-    // Restriction mode change handler
-    $('#restriction-mode').on('change', function() {
-      const mode = $(this).val();
-      $('#restriction-builder').hide();
-      $('#restriction-json-editor').hide();
-      
-      if (mode === 'builder') {
-        $('#restriction-builder').show();
-      } else if (mode === 'json') {
-        $('#restriction-json-editor').show();
-      }
-    });
+      // Restriction mode change handler
+      $('#restriction-mode').on('change', function () {
+        const mode = $(this).val();
+        $('#restriction-builder').hide();
+        $('#restriction-json-editor').hide();
 
-    // Add restriction functions
-    window.addDailyRestriction = function() {
-      const id = 'daily-' + Date.now();
-      const html = `
+        if (mode === 'builder') {
+          $('#restriction-builder').show();
+        } else if (mode === 'json') {
+          $('#restriction-json-editor').show();
+        }
+      });
+
+      // Add restriction functions
+      window.addDailyRestriction = function () {
+        const id = 'daily-' + Date.now();
+        const html = `
         <div class="restriction-item" id="${id}">
           <div class="d-flex align-items-center gap-2">
             <input type="time" class="form-control form-control-sm" data-type="start" style="width:100px;">
@@ -385,12 +426,12 @@
           </div>
         </div>
       `;
-      $('#daily-list').append(html);
-    };
+        $('#daily-list').append(html);
+      };
 
-    window.addWeeklyRestriction = function() {
-      const id = 'weekly-' + Date.now();
-      const html = `
+      window.addWeeklyRestriction = function () {
+        const id = 'weekly-' + Date.now();
+        const html = `
         <div class="restriction-item" id="${id}">
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <select class="form-select form-select-sm" data-type="day" style="width:120px;">
@@ -409,12 +450,12 @@
           </div>
         </div>
       `;
-      $('#weekly-list').append(html);
-    };
+        $('#weekly-list').append(html);
+      };
 
-    window.addYearlyRestriction = function() {
-      const id = 'yearly-' + Date.now();
-      const html = `
+      window.addYearlyRestriction = function () {
+        const id = 'yearly-' + Date.now();
+        const html = `
         <div class="restriction-item" id="${id}">
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <input type="number" class="form-control form-control-sm" placeholder="Month" data-type="month" min="1" max="12" style="width:80px;">
@@ -426,12 +467,12 @@
           </div>
         </div>
       `;
-      $('#yearly-list').append(html);
-    };
+        $('#yearly-list').append(html);
+      };
 
-    window.addSpecialRestriction = function() {
-      const id = 'special-' + Date.now();
-      const html = `
+      window.addSpecialRestriction = function () {
+        const id = 'special-' + Date.now();
+        const html = `
         <div class="restriction-item" id="${id}">
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <input type="date" class="form-control form-control-sm" data-type="date" style="width:150px;">
@@ -442,142 +483,146 @@
           </div>
         </div>
       `;
-      $('#special-list').append(html);
-    };
+        $('#special-list').append(html);
+      };
 
-    window.removeRestriction = function(id) {
-      $('#' + id).remove();
-      updateJsonPreview();
-    };
+      window.removeRestriction = function (id) {
+        $('#' + id).remove();
+        updateJsonPreview();
+      };
 
-    window.validateRestrictionJson = function() {
-      const json = $('#edit-restriction-json').val().trim();
-      const $result = $('#json-validation-result');
-      
-      if (!json) {
-        $result.html('<div class="alert alert-info mb-0 mt-2">No restrictions defined</div>');
-        return;
-      }
+      window.validateRestrictionJson = function () {
+        const json = $('#edit-restriction-json').val().trim();
+        const $result = $('#json-validation-result');
 
-      try {
-        const parsed = JSON.parse(json);
-        $result.html('<div class="alert alert-success mb-0 mt-2"><i class="fas fa-check-circle"></i> Valid JSON format!</div>');
-      } catch (e) {
-        $result.html(`<div class="alert alert-danger mb-0 mt-2"><i class="fas fa-times-circle"></i> Invalid JSON: ${e.message}</div>`);
-      }
-    };
-
-    function updateJsonPreview() {
-      const json = buildRestrictionJsonFromBuilder();
-      if (json) {
-        const formatted = JSON.stringify(JSON.parse(json), null, 2);
-        $('#json-preview-content').text(formatted);
-        $('#json-preview-section').show();
-      } else {
-        $('#json-preview-section').hide();
-      }
-    }
-
-    // Add input listeners to all restriction inputs
-    $(document).on('change', '#daily-list input, #weekly-list input, #weekly-list select, #yearly-list input, #special-list input', updateJsonPreview);
-
-    function buildRestrictionJsonFromBuilder() {
-      const restrictions = {};
-
-      // Daily restrictions
-      const dailyRanges = [];
-      $('#daily-list .restriction-item').each(function() {
-        const start = $(this).find('[data-type="start"]').val();
-        const end = $(this).find('[data-type="end"]').val();
-        if (start && end) {
-          dailyRanges.push(`${start}-${end}`);
+        if (!json) {
+          $result.html('<div class="alert alert-info mb-0 mt-2">No restrictions defined</div>');
+          return;
         }
-      });
-      if (dailyRanges.length > 0) {
-        restrictions.daily = dailyRanges;
-      }
 
-      // Weekly restrictions
-      const weeklyObj = {};
-      $('#weekly-list .restriction-item').each(function() {
-        const day = $(this).find('[data-type="day"]').val();
-        const start = $(this).find('[data-type="start"]').val();
-        const end = $(this).find('[data-type="end"]').val();
-        if (day && start && end) {
-          if (!weeklyObj[day]) weeklyObj[day] = [];
-          weeklyObj[day].push(`${start}-${end}`);
-        }
-      });
-      if (Object.keys(weeklyObj).length > 0) {
-        restrictions.weekly = weeklyObj;
-      }
-
-      // Yearly restrictions
-      const yearlyObj = {};
-      $('#yearly-list .restriction-item').each(function() {
-        const month = $(this).find('[data-type="month"]').val();
-        const day = $(this).find('[data-type="day"]').val();
-        const start = $(this).find('[data-type="start"]').val();
-        const end = $(this).find('[data-type="end"]').val();
-        if (month && day && start && end) {
-          const key = `${month}-${day}`;
-          if (!yearlyObj[key]) yearlyObj[key] = [];
-          yearlyObj[key].push(`${start}-${end}`);
-        }
-      });
-      if (Object.keys(yearlyObj).length > 0) {
-        restrictions.yearly = yearlyObj;
-      }
-
-      // Special restrictions
-      const specialObj = {};
-      $('#special-list .restriction-item').each(function() {
-        const date = $(this).find('[data-type="date"]').val();
-        const start = $(this).find('[data-type="start"]').val();
-        const end = $(this).find('[data-type="end"]').val();
-        if (date && start && end) {
-          if (!specialObj[date]) specialObj[date] = [];
-          specialObj[date].push(`${start}-${end}`);
-        }
-      });
-      if (Object.keys(specialObj).length > 0) {
-        restrictions.special = { daily: specialObj };
-      }
-
-      return Object.keys(restrictions).length > 0 ? JSON.stringify(restrictions) : null;
-    }
-
-    function populateAdminModal(space) {
-      $('#edit-index').val(space.index);
-      $('#edit-location-x').val(space.locationX);
-      $('#edit-location-y').val(space.locationY);
-      $('#edit-width').val(space.sizeX);
-      $('#edit-height').val(space.sizeY);
-      $('#edit-floor').val(space.floor);
-      $('#edit-price').val(space.price);
-      $('#edit-state').val(space.state);
-      $('#edit-exclusive').val(space.feature);
-      $('#edit-plate').val(space.plate || '');
-      $('#edit-days').val(space.daysToOccupy || 0);
-
-      // Clear restriction builders
-      $('#daily-list').empty();
-      $('#weekly-list').empty();
-      $('#yearly-list').empty();
-      $('#special-list').empty();
-      $('#json-preview-section').hide();
-
-      // Load restrictions
-      if (space.restrictionJson) {
         try {
-          const restrictions = JSON.parse(space.restrictionJson);
-          
-          // Populate daily
-          if (restrictions.daily && Array.isArray(restrictions.daily)) {
-            restrictions.daily.forEach(range => {
-              const [start, end] = range.split('-');
-              const id = 'daily-' + Date.now() + Math.random();
-              const html = `
+          const parsed = JSON.parse(json);
+          $result.html('<div class="alert alert-success mb-0 mt-2"><i class="fas fa-check-circle"></i> Valid JSON format!</div>');
+        } catch (e) {
+          $result.html(`<div class="alert alert-danger mb-0 mt-2"><i class="fas fa-times-circle"></i> Invalid JSON: ${e.message}</div>`);
+        }
+      };
+
+      function updateJsonPreview() {
+        const json = buildRestrictionJsonFromBuilder();
+        if (json) {
+          const formatted = JSON.stringify(JSON.parse(json), null, 2);
+          $('#json-preview-content').text(formatted);
+          $('#json-preview-section').show();
+        } else {
+          $('#json-preview-section').hide();
+        }
+      }
+
+      // Add input listeners to all restriction inputs
+      $(document).on('change', '#daily-list input, #weekly-list input, #weekly-list select, #yearly-list input, #special-list input', updateJsonPreview);
+
+      function buildRestrictionJsonFromBuilder() {
+        const restrictions = {};
+
+        // Daily restrictions
+        const dailyRanges = [];
+        $('#daily-list .restriction-item').each(function () {
+          const start = $(this).find('[data-type="start"]').val();
+          const end = $(this).find('[data-type="end"]').val();
+          if (start && end) {
+            dailyRanges.push(`${start}-${end}`);
+          }
+        });
+        if (dailyRanges.length > 0) {
+          restrictions.daily = dailyRanges;
+        }
+
+        // Weekly restrictions
+        const weeklyObj = {};
+        $('#weekly-list .restriction-item').each(function () {
+          const day = $(this).find('[data-type="day"]').val();
+          const start = $(this).find('[data-type="start"]').val();
+          const end = $(this).find('[data-type="end"]').val();
+          if (day && start && end) {
+            if (!weeklyObj[day]) weeklyObj[day] = [];
+            weeklyObj[day].push(`${start}-${end}`);
+          }
+        });
+        if (Object.keys(weeklyObj).length > 0) {
+          restrictions.weekly = weeklyObj;
+        }
+
+        // Yearly restrictions
+        const yearlyObj = {};
+        $('#yearly-list .restriction-item').each(function () {
+          const month = $(this).find('[data-type="month"]').val();
+          const day = $(this).find('[data-type="day"]').val();
+          const start = $(this).find('[data-type="start"]').val();
+          const end = $(this).find('[data-type="end"]').val();
+          if (month && day && start && end) {
+            const key = `${month}-${day}`;
+            if (!yearlyObj[key]) yearlyObj[key] = [];
+            yearlyObj[key].push(`${start}-${end}`);
+          }
+        });
+        if (Object.keys(yearlyObj).length > 0) {
+          restrictions.yearly = yearlyObj;
+        }
+
+        // Special restrictions
+        const specialObj = {};
+        $('#special-list .restriction-item').each(function () {
+          const date = $(this).find('[data-type="date"]').val();
+          const start = $(this).find('[data-type="start"]').val();
+          const end = $(this).find('[data-type="end"]').val();
+          if (date && start && end) {
+            if (!specialObj[date]) specialObj[date] = [];
+            specialObj[date].push(`${start}-${end}`);
+          }
+        });
+        if (Object.keys(specialObj).length > 0) {
+          restrictions.special = { daily: specialObj };
+        }
+
+        return Object.keys(restrictions).length > 0 ? JSON.stringify(restrictions) : null;
+      }
+
+      function populateAdminModal(space) {
+        $('#edit-index').val(space.index);
+        $('#edit-location-index').val(space.location_index);
+        $('#edit-location-x').val(space.location_x);
+        $('#edit-location-y').val(space.location_y);
+        $('#edit-width').val(space.width);
+        $('#edit-height').val(space.height);
+        $('#edit-floor').val(space.floor);
+        $('#edit-price').val(space.price);
+        $('#edit-days-occupy').val(space.days_to_occupy);
+        $('#edit-exclusive').val(space.exclusive);
+        $('#edit-state').val(space.state);
+        $('#edit-plate').val(space.plate || '');
+        $('#edit-is-occupied').prop('checked', space.is_occupied === 1);
+        $('#edit-occupancy-json').val(space.occupancy_json || '');
+        $('#edit-restriction-json').val(space.restriction_json || '');
+
+        // Clear restriction builders
+        $('#daily-list').empty();
+        $('#weekly-list').empty();
+        $('#yearly-list').empty();
+        $('#special-list').empty();
+        $('#json-preview-section').hide();
+
+        // Load restrictions
+        if (space.restrictionJson) {
+          try {
+            const restrictions = JSON.parse(space.restrictionJson);
+
+            // Populate daily
+            if (restrictions.daily && Array.isArray(restrictions.daily)) {
+              restrictions.daily.forEach(range => {
+                const [start, end] = range.split('-');
+                const id = 'daily-' + Date.now() + Math.random();
+                const html = `
                 <div class="restriction-item" id="${id}">
                   <div class="d-flex align-items-center gap-2">
                     <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:100px;">
@@ -587,28 +632,28 @@
                   </div>
                 </div>
               `;
-              $('#daily-list').append(html);
-            });
-          }
+                $('#daily-list').append(html);
+              });
+            }
 
-          // Populate weekly
-          if (restrictions.weekly && typeof restrictions.weekly === 'object') {
-            Object.entries(restrictions.weekly).forEach(([day, ranges]) => {
-              const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
-              rangeArray.forEach(range => {
-                const [start, end] = range.split('-');
-                const id = 'weekly-' + Date.now() + Math.random();
-                const html = `
+            // Populate weekly
+            if (restrictions.weekly && typeof restrictions.weekly === 'object') {
+              Object.entries(restrictions.weekly).forEach(([day, ranges]) => {
+                const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
+                rangeArray.forEach(range => {
+                  const [start, end] = range.split('-');
+                  const id = 'weekly-' + Date.now() + Math.random();
+                  const html = `
                   <div class="restriction-item" id="${id}">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                       <select class="form-select form-select-sm" data-type="day" style="width:120px;">
-                        <option value="0" ${day=='0'?'selected':''}>Sunday</option>
-                        <option value="1" ${day=='1'?'selected':''}>Monday</option>
-                        <option value="2" ${day=='2'?'selected':''}>Tuesday</option>
-                        <option value="3" ${day=='3'?'selected':''}>Wednesday</option>
-                        <option value="4" ${day=='4'?'selected':''}>Thursday</option>
-                        <option value="5" ${day=='5'?'selected':''}>Friday</option>
-                        <option value="6" ${day=='6'?'selected':''}>Saturday</option>
+                        <option value="0" ${day == '0' ? 'selected' : ''}>Sunday</option>
+                        <option value="1" ${day == '1' ? 'selected' : ''}>Monday</option>
+                        <option value="2" ${day == '2' ? 'selected' : ''}>Tuesday</option>
+                        <option value="3" ${day == '3' ? 'selected' : ''}>Wednesday</option>
+                        <option value="4" ${day == '4' ? 'selected' : ''}>Thursday</option>
+                        <option value="5" ${day == '5' ? 'selected' : ''}>Friday</option>
+                        <option value="6" ${day == '6' ? 'selected' : ''}>Saturday</option>
                       </select>
                       <input type="time" class="form-control form-control-sm" data-type="start" value="${start}" style="width:90px;">
                       <span>to</span>
@@ -617,20 +662,20 @@
                     </div>
                   </div>
                 `;
-                $('#weekly-list').append(html);
+                  $('#weekly-list').append(html);
+                });
               });
-            });
-          }
+            }
 
-          // Populate yearly
-          if (restrictions.yearly && typeof restrictions.yearly === 'object') {
-            Object.entries(restrictions.yearly).forEach(([monthDay, ranges]) => {
-              const [month, day] = monthDay.split('-');
-              const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
-              rangeArray.forEach(range => {
-                const [start, end] = range.split('-');
-                const id = 'yearly-' + Date.now() + Math.random();
-                const html = `
+            // Populate yearly
+            if (restrictions.yearly && typeof restrictions.yearly === 'object') {
+              Object.entries(restrictions.yearly).forEach(([monthDay, ranges]) => {
+                const [month, day] = monthDay.split('-');
+                const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
+                rangeArray.forEach(range => {
+                  const [start, end] = range.split('-');
+                  const id = 'yearly-' + Date.now() + Math.random();
+                  const html = `
                   <div class="restriction-item" id="${id}">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                       <input type="number" class="form-control form-control-sm" placeholder="Month" data-type="month" min="1" max="12" value="${month}" style="width:80px;">
@@ -642,19 +687,19 @@
                     </div>
                   </div>
                 `;
-                $('#yearly-list').append(html);
+                  $('#yearly-list').append(html);
+                });
               });
-            });
-          }
+            }
 
-          // Populate special
-          if (restrictions.special?.daily && typeof restrictions.special.daily === 'object') {
-            Object.entries(restrictions.special.daily).forEach(([date, ranges]) => {
-              const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
-              rangeArray.forEach(range => {
-                const [start, end] = range.split('-');
-                const id = 'special-' + Date.now() + Math.random();
-                const html = `
+            // Populate special
+            if (restrictions.special?.daily && typeof restrictions.special.daily === 'object') {
+              Object.entries(restrictions.special.daily).forEach(([date, ranges]) => {
+                const rangeArray = Array.isArray(ranges) ? ranges : [ranges];
+                rangeArray.forEach(range => {
+                  const [start, end] = range.split('-');
+                  const id = 'special-' + Date.now() + Math.random();
+                  const html = `
                   <div class="restriction-item" id="${id}">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
                       <input type="date" class="form-control form-control-sm" data-type="date" value="${date}" style="width:150px;">
@@ -665,134 +710,177 @@
                     </div>
                   </div>
                 `;
-                $('#special-list').append(html);
+                  $('#special-list').append(html);
+                });
               });
-            });
-          }
+            }
 
-          $('#restriction-mode').val('builder');
-          $('#restriction-builder').show();
-          $('#restriction-json-editor').hide();
-          updateJsonPreview();
-        } catch (e) {
-          console.error('Error parsing restriction JSON:', e);
-          $('#restriction-mode').val('json');
-          $('#restriction-json-editor').show();
-          $('#restriction-builder').hide();
-          $('#edit-restriction-json').val(space.restrictionJson);
-        }
-      } else {
-        $('#restriction-mode').val('none');
-        $('#restriction-json-editor').hide();
-        $('#restriction-builder').hide();
-        $('#edit-restriction-json').val('');
-      }
-    }
-
-    $('#map-wrapper').on('click', '.parking-space', function() {
-      const idx = $(this).data('index');
-      const space = parkingSpaces.find(s => String(s.index) === String(idx));
-      if (!space) return;
-      populateAdminModal(space);
-      $('#adminEditModal').modal('show');
-    });
-
-    $('#floor-up').on('click', function() {
-      if (currentFloorIndex >= mapData.floors.length - 1) return;
-      const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
-      currentFloorIndex++;
-      loadFloor(currentFloorIndex, newContainer);
-      $(activeContainerSelector).hide();
-      $(newContainer).show();
-      activeContainerSelector = newContainer;
-    });
-
-    $('#floor-down').on('click', function() {
-      if (currentFloorIndex <= 0) return;
-      const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
-      currentFloorIndex--;
-      loadFloor(currentFloorIndex, newContainer);
-      $(activeContainerSelector).hide();
-      $(newContainer).show();
-      activeContainerSelector = newContainer;
-    });
-
-    // Admin save handler
-    $('#admin-save').off('click').on('click', function(e) {
-      e.preventDefault();
-
-      let restrictionJson = null;
-      const mode = $('#restriction-mode').val();
-
-      if (mode === 'builder') {
-        restrictionJson = buildRestrictionJsonFromBuilder();
-      } else if (mode === 'json') {
-        const jsonText = $('#edit-restriction-json').val().trim();
-        if (jsonText) {
-          try {
-            JSON.parse(jsonText); // Validate
-            restrictionJson = jsonText;
+            $('#restriction-mode').val('builder');
+            $('#restriction-builder').show();
+            $('#restriction-json-editor').hide();
+            updateJsonPreview();
           } catch (e) {
-            alert('Invalid JSON format in restrictions. Please fix or validate first.');
-            return;
+            console.error('Error parsing restriction JSON:', e);
+            $('#restriction-mode').val('json');
+            $('#restriction-json-editor').show();
+            $('#restriction-builder').hide();
+            $('#edit-restriction-json').val(space.restrictionJson);
           }
+        } else {
+          $('#restriction-mode').val('none');
+          $('#restriction-json-editor').hide();
+          $('#restriction-builder').hide();
+          $('#edit-restriction-json').val('');
         }
       }
 
-      const updatedSpace = {
-        index: $('#edit-index').val(),
-        location_x: parseFloat($('#edit-location-x').val()),
-        location_y: parseFloat($('#edit-location-y').val()),
-        width: parseFloat($('#edit-width').val()),
-        height: parseFloat($('#edit-height').val()),
-        floor: parseInt($('#edit-floor').val(), 10),
-        price: parseFloat($('#edit-price').val()),
-        state: $('#edit-state').val(),
-        exclusive: $('#edit-exclusive').val(),
-        plate: $('#edit-plate').val() || null,
-        days_to_occupy: parseInt($('#edit-days').val(), 10) || 0,
-        restriction_json: restrictionJson
-      };
+      $('#map-wrapper').on('click', '.parking-space', function () {
+        const idx = $(this).data('index');
+        const space = parkingSpaces.find(s => String(s.index) === String(idx));
+        if (!space) return;
+        populateAdminModal(space);
+        $('#adminEditModal').modal('show');
+      });
 
-      $.ajax({
-        url: '/api/admin/parking/update',
-        method: 'POST',
-        contentType: 'application/json',
-        data: JSON.stringify(updatedSpace),
-        success: function() {
-          fetchParkingSpaces(function() {
+      $('#floor-up').on('click', function () {
+        if (currentFloorIndex >= mapData.floors.length - 1) return;
+        const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
+        currentFloorIndex++;
+        loadFloor(currentFloorIndex, newContainer);
+        $(activeContainerSelector).hide();
+        $(newContainer).show();
+        activeContainerSelector = newContainer;
+      });
+
+      $('#floor-down').on('click', function () {
+        if (currentFloorIndex <= 0) return;
+        const newContainer = (activeContainerSelector === '#map-container-1') ? '#map-container-2' : '#map-container-1';
+        currentFloorIndex--;
+        loadFloor(currentFloorIndex, newContainer);
+        $(activeContainerSelector).hide();
+        $(newContainer).show();
+        activeContainerSelector = newContainer;
+      });
+
+      // Admin save handler
+      $('#admin-save').off('click').on('click', function (e) {
+        e.preventDefault();
+
+        let restrictionJson = null;
+        const mode = $('#restriction-mode').val();
+
+        if (mode === 'builder') {
+          restrictionJson = buildRestrictionJsonFromBuilder();
+        } else if (mode === 'json') {
+          const jsonText = $('#edit-restriction-json').val().trim();
+          if (jsonText) {
+            try {
+              JSON.parse(jsonText); // Validate
+              restrictionJson = jsonText;
+            } catch (e) {
+              alert('Invalid JSON format in restrictions. Please fix or validate first.');
+              return;
+            }
+          }
+        }
+
+        const updatedSpace = {
+          index: $('#edit-index').val(),
+          location_x: parseFloat($('#edit-location-x').val()),
+          location_y: parseFloat($('#edit-location-y').val()),
+          width: parseFloat($('#edit-width').val()),
+          height: parseFloat($('#edit-height').val()),
+          floor: parseInt($('#edit-floor').val(), 10),
+          price: parseFloat($('#edit-price').val()),
+          state: $('#edit-state').val(),
+          exclusive: $('#edit-exclusive').val(),
+          plate: $('#edit-plate').val() || null,
+          days_to_occupy: parseInt($('#edit-days').val(), 10) || 0,
+          restriction_json: restrictionJson
+        };
+
+        $.ajax({
+          url: '/api/admin/parking/update',
+          method: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify(updatedSpace),
+          success: function () {
+            fetchParkingSpaces(function () {
+              loadFloor(currentFloorIndex, activeContainerSelector);
+              $('#adminEditModal').modal('hide');
+              alert('Parking space updated successfully!');
+            });
+          },
+          error: function (xhr) {
+            alert('Failed to update parking space: ' + (xhr.responseJSON?.error || 'Unknown error'));
+          }
+        });
+      });
+
+      $('#search-user-btn').on('click', function () {
+        const username = $('#username-search').val().trim();
+        if (!username) {
+          alert('Please enter a username to search');
+          return;
+        }
+
+        let found = false;
+        parkingSpaces.forEach(space => {
+          if (space.occupancy_json) {
+            try {
+              const occupancies = JSON.parse(space.occupancy_json);
+              const userOccupancy = occupancies.find(occ => occ.username === username);
+              if (userOccupancy) {
+                found = true;
+                const isCurrentlyOccupied = space.is_occupied === 1;
+
+                $('#user-search-result')
+                  .html(`
+              <div class="alert ${isCurrentlyOccupied ? 'alert-success' : 'alert-warning'}">
+                <h6>User Found!</h6>
+                <p>Space #${space.index} - Currently: ${isCurrentlyOccupied ? 'Occupied' : 'Not Occupied'}</p>
+                <button class="btn btn-sm btn-${isCurrentlyOccupied ? 'warning' : 'success'}" 
+                  onclick="updateUserOccupancy('${username}', ${isCurrentlyOccupied})">
+                  ${isCurrentlyOccupied ? 'Mark as Not Occupied' : 'Mark as Occupied'}
+                </button>
+              </div>
+            `)
+                  .show();
+              }
+            } catch (e) {
+              console.error('Error parsing occupancy_json:', e);
+            }
+          }
+        });
+
+        if (!found) {
+          $('#user-search-result')
+            .html('<div class="alert alert-danger">No reservations found for this user</div>')
+            .show();
+        }
+      });
+
+      // Initialize
+      fetchMaps(function () {
+        fetchParkingSpaces(function () {
+          if (mapData.floors.length > 0) {
             loadFloor(currentFloorIndex, activeContainerSelector);
-            $('#adminEditModal').modal('hide');
-            alert('Parking space updated successfully!');
-          });
-        },
-        error: function(xhr) {
-          alert('Failed to update parking space: ' + (xhr.responseJSON?.error || 'Unknown error'));
-        }
+          } else {
+            alert('No maps available for this location.');
+          }
+
+          fetchOverdueFeed();
+
+          if (overduePollInterval) clearInterval(overduePollInterval);
+          overduePollInterval = setInterval(fetchOverdueFeed, 15000);
+        });
       });
-    });
 
-    // Initialize
-    fetchMaps(function() {
-      fetchParkingSpaces(function() {
-        if (mapData.floors.length > 0) {
-          loadFloor(currentFloorIndex, activeContainerSelector);
-        } else {
-          alert('No maps available for this location.');
-        }
-
-        fetchOverdueFeed();
-
+      $(window).on('beforeunload', function () {
         if (overduePollInterval) clearInterval(overduePollInterval);
-        overduePollInterval = setInterval(fetchOverdueFeed, 15000);
       });
     });
-
-    $(window).on('beforeunload', function() {
-      if (overduePollInterval) clearInterval(overduePollInterval);
-    });
-  });
-</script>
+  </script>
 
   <!-- Admin Edit Modal -->
   <div class="modal fade" id="adminEditModal" tabindex="-1" aria-labelledby="adminEditModalLabel" aria-hidden="true">
@@ -805,13 +893,15 @@
         <div class="modal-body">
           <form id="admin-edit-form">
             <input type="hidden" id="edit-index">
-            
+
             <ul class="nav nav-tabs mb-3" id="editTabs" role="tablist">
               <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic" type="button">Basic Info</button>
+                <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic"
+                  type="button">Basic Info</button>
               </li>
               <li class="nav-item" role="presentation">
-                <button class="nav-link" id="restrictions-tab" data-bs-toggle="tab" data-bs-target="#restrictions" type="button">Time Restrictions</button>
+                <button class="nav-link" id="restrictions-tab" data-bs-toggle="tab" data-bs-target="#restrictions"
+                  type="button">Time Restrictions</button>
               </li>
             </ul>
 
@@ -976,7 +1066,8 @@
   }
 }'></textarea>
                     <small class="form-text text-muted">
-                      <strong>Format:</strong> daily (array of "HH:MM-HH:MM"), weekly (object: day 0-6), yearly (object: "MM-DD"), special.daily (object: "YYYY-MM-DD")
+                      <strong>Format:</strong> daily (array of "HH:MM-HH:MM"), weekly (object: day 0-6), yearly (object:
+                      "MM-DD"), special.daily (object: "YYYY-MM-DD")
                     </small>
                   </div>
                   <button type="button" class="btn btn-sm btn-secondary" onclick="validateRestrictionJson()">
@@ -1007,5 +1098,27 @@
       </div>
     </div>
   </div>
+  <div class="user-search-panel">
+    <div class="card">
+      <div class="card-header bg-info text-white">
+        <i class="fas fa-user-check"></i> User Occupancy Check
+      </div>
+      <div class="card-body">
+        <div class="form-group">
+          <label for="username-search">Search by Username:</label>
+          <div class="input-group">
+            <input type="text" class="form-control" id="username-search" placeholder="Enter username">
+            <button class="btn btn-info" type="button" id="search-user-btn">
+              <i class="fas fa-search"></i>
+            </button>
+          </div>
+        </div>
+        <div id="user-search-result" class="mt-2" style="display:none;">
+          <!-- Results will be shown here -->
+        </div>
+      </div>
+    </div>
+  </div>
 </body>
+
 </html>

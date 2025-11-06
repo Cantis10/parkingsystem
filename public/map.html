@@ -726,7 +726,7 @@
 
         const btn = $(this);
         btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Reserving...');
-
+      
         $.ajax({
           url: '/api/parking/reserve-calendar',
           method: 'POST',
